@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -10,15 +14,29 @@ import (
 	"github.com/google/uuid"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db           *gorm.DB
+	googleConfig *oauth2.Config
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	googleConfig := &oauth2.Config{
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		Scopes:       []string{"openid", "profile", "email"},
+		Endpoint:     google.Endpoint,
+	}
+
+	return &Handler{
+		db:           db,
+		googleConfig: googleConfig,
+	}
 }
 
 type RegisterRequest struct {
@@ -36,14 +54,173 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	AccessToken  string         `json:"access_token"`
-	RefreshToken string         `json:"refresh_token"`
-	ExpiresIn    int64          `json:"expires_in"`
-	User         database.User  `json:"user"`
-	Tenant       database.Tenant `json:"tenant"`
+	AccessToken  string              `json:"access_token"`
+	RefreshToken string              `json:"refresh_token"`
+	ExpiresIn    int64               `json:"expires_in"`
+	User         database.User       `json:"user"`
+	Tenant       database.Tenant     `json:"tenant"`
+	IsNewUser    bool                `json:"is_new_user,omitempty"`
 }
 
-// Register creates a new tenant and owner user
+type GoogleUserInfo struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
+	Name          string `json:"name"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	Picture       string `json:"picture"`
+}
+
+// GoogleLogin redirects to Google OAuth consent screen
+func (h *Handler) GoogleLogin(c *gin.Context) {
+	// Generate state token for CSRF protection
+	state := uuid.New().String()
+	
+	// Store state in cookie (short-lived)
+	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+	
+	url := h.googleConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	c.Redirect(http.StatusTemporaryRedirect, url)
+}
+
+// GoogleCallback handles the OAuth callback from Google
+func (h *Handler) GoogleCallback(c *gin.Context) {
+	// Verify state
+	state := c.Query("state")
+	storedState, err := c.Cookie("oauth_state")
+	if err != nil || state != storedState {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
+		return
+	}
+
+	// Get authorization code
+	code := c.Query("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No authorization code"})
+		return
+	}
+
+	// Exchange code for token
+	token, err := h.googleConfig.Exchange(context.Background(), code)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+		return
+	}
+
+	// Get user info from Google
+	userInfo, err := h.getGoogleUserInfo(token.AccessToken)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
+		return
+	}
+
+	// Check if user exists
+	var user database.User
+	var tenant database.Tenant
+	isNewUser := false
+
+	err = h.db.Where("google_id = ?", userInfo.ID).First(&user).Error
+	if err == gorm.ErrRecordNotFound {
+		// Try to find by email
+		err = h.db.Where("email = ?", userInfo.Email).First(&user).Error
+		if err == gorm.ErrRecordNotFound {
+			// New user - need to create tenant and user
+			isNewUser = true
+			
+			// Create tenant
+			tenant = database.Tenant{
+				Name:  userInfo.Name + "'s Business",
+				Email: userInfo.Email,
+			}
+			if err := h.db.Create(&tenant).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create business"})
+				return
+			}
+
+			// Create default subscription (Gratis)
+			subscription := database.Subscription{
+				TenantID:               tenant.ID,
+				Plan:                   "gratis",
+				Status:                 "active",
+				MaxUsers:               1,
+				MaxProducts:            20,
+				MaxTransactionsDaily:   20,
+				MaxTransactionsMonthly: 0, // 0 = use daily limit
+				MaxOutlets:             1,
+				DataRetentionDays:      30,
+				CurrentPeriodStart:     time.Now(),
+				CurrentPeriodEnd:       time.Now().AddDate(0, 1, 0),
+			}
+			h.db.Create(&subscription)
+
+			// Create user
+			user = database.User{
+				TenantID: tenant.ID,
+				Email:    userInfo.Email,
+				GoogleID: userInfo.ID,
+				Name:     userInfo.Name,
+				Role:     "owner",
+				IsActive: true,
+			}
+			if err := h.db.Create(&user).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+				return
+			}
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		} else {
+			// User exists by email, update GoogleID
+			user.GoogleID = userInfo.ID
+			h.db.Save(&user)
+			h.db.First(&tenant, user.TenantID)
+		}
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	} else {
+		// User found by GoogleID
+		h.db.First(&tenant, user.TenantID)
+	}
+
+	// Generate tokens
+	accessToken, refreshToken, expiresIn := generateTokens(user, tenant)
+
+	// Get frontend URL for redirect
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	// Redirect to frontend with tokens
+	redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s&is_new_user=%t",
+		frontendURL, accessToken, refreshToken, isNewUser)
+	
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+}
+
+func (h *Handler) getGoogleUserInfo(accessToken string) (*GoogleUserInfo, error) {
+	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + accessToken)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var userInfo GoogleUserInfo
+	if err := json.Unmarshal(body, &userInfo); err != nil {
+		return nil, err
+	}
+
+	return &userInfo, nil
+}
+
+// Register creates a new tenant and owner user (email/password)
 func (h *Handler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -78,6 +255,22 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	// Create default subscription (Gratis)
+	subscription := database.Subscription{
+		TenantID:               tenant.ID,
+		Plan:                   "gratis",
+		Status:                 "active",
+		MaxUsers:               1,
+		MaxProducts:            20,
+		MaxTransactionsDaily:   20,
+		MaxTransactionsMonthly: 0,
+		MaxOutlets:             1,
+		DataRetentionDays:      30,
+		CurrentPeriodStart:     time.Now(),
+		CurrentPeriodEnd:       time.Now().AddDate(0, 1, 0),
+	}
+	h.db.Create(&subscription)
+
 	// Create owner user
 	user := database.User{
 		TenantID:     tenant.ID,
@@ -105,7 +298,7 @@ func (h *Handler) Register(c *gin.Context) {
 	})
 }
 
-// Login authenticates a user
+// Login authenticates a user with email/password
 func (h *Handler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -198,6 +391,29 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 		ExpiresIn:    expiresIn,
 		User:         user,
 		Tenant:       tenant,
+	})
+}
+
+// GetMe returns the current user's info
+func (h *Handler) GetMe(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	tenantID, _ := c.Get("tenant_id")
+
+	var user database.User
+	if err := h.db.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	var tenant database.Tenant
+	if err := h.db.Preload("Subscription").First(&tenant, tenantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Business not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user":   user,
+		"tenant": tenant,
 	})
 }
 

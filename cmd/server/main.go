@@ -49,11 +49,18 @@ func main() {
 		v1.POST("/auth/register", authHandler.Register)
 		v1.POST("/auth/login", authHandler.Login)
 		v1.POST("/auth/refresh", authHandler.RefreshToken)
+		
+		// Google OAuth routes
+		v1.GET("/auth/google", authHandler.GoogleLogin)
+		v1.GET("/auth/google/callback", authHandler.GoogleCallback)
 
 		// Protected routes
 		protected := v1.Group("")
 		protected.Use(middleware.AuthRequired())
 		{
+			// Auth - get current user
+			protected.GET("/auth/me", authHandler.GetMe)
+			
 			// Product routes
 			productHandler := product.NewHandler(db)
 			protected.GET("/products", productHandler.List)
