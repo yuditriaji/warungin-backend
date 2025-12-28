@@ -18,24 +18,69 @@ type BaseModel struct {
 // Tenant represents a business/organization
 type Tenant struct {
 	BaseModel
-	Name         string `gorm:"not null" json:"name"`
-	BusinessType string `json:"business_type"`
-	Phone        string `json:"phone"`
-	Email        string `gorm:"uniqueIndex" json:"email"`
-	Address      string `json:"address"`
-	Settings     string `gorm:"type:jsonb;default:'{}'" json:"settings"`
+	Name         string        `gorm:"not null" json:"name"`
+	BusinessType string        `json:"business_type"`
+	Phone        string        `json:"phone"`
+	Email        string        `gorm:"uniqueIndex" json:"email"`
+	Address      string        `json:"address"`
+	Settings     string        `gorm:"type:jsonb;default:'{}'" json:"settings"`
+	Subscription *Subscription `gorm:"foreignKey:TenantID" json:"subscription,omitempty"`
+	Outlets      []Outlet      `gorm:"foreignKey:TenantID" json:"outlets,omitempty"`
+}
+
+// Subscription represents tenant's plan
+type Subscription struct {
+	BaseModel
+	TenantID               uuid.UUID  `gorm:"type:uuid;uniqueIndex;not null" json:"tenant_id"`
+	Plan                   string     `gorm:"default:'gratis'" json:"plan"` // gratis, pemula, bisnis, enterprise
+	Status                 string     `gorm:"default:'active'" json:"status"` // active, past_due, cancelled
+	MaxUsers               int        `gorm:"default:1" json:"max_users"`
+	MaxProducts            int        `gorm:"default:20" json:"max_products"`
+	MaxTransactionsDaily   int        `gorm:"default:20" json:"max_transactions_daily"` // For gratis tier
+	MaxTransactionsMonthly int        `gorm:"default:0" json:"max_transactions_monthly"` // 0 = unlimited
+	MaxOutlets             int        `gorm:"default:1" json:"max_outlets"`
+	DataRetentionDays      int        `gorm:"default:30" json:"data_retention_days"`
+	CurrentPeriodStart     time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd       time.Time  `json:"current_period_end"`
+	PaymentGatewayID       string     `json:"payment_gateway_id"` // Midtrans subscription ID
+}
+
+// UsageMetrics tracks tenant usage per period
+type UsageMetrics struct {
+	BaseModel
+	TenantID         uuid.UUID `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	Period           string    `gorm:"not null" json:"period"` // YYYY-MM format
+	TransactionCount int       `gorm:"default:0" json:"transaction_count"`
+	ProductCount     int       `gorm:"default:0" json:"product_count"`
+	UserCount        int       `gorm:"default:0" json:"user_count"`
+	DailyTxDate      string    `json:"daily_tx_date"` // YYYY-MM-DD for daily tracking
+	DailyTxCount     int       `gorm:"default:0" json:"daily_tx_count"`
+}
+
+// Outlet represents a store location
+type Outlet struct {
+	BaseModel
+	TenantID uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant   Tenant    `gorm:"foreignKey:TenantID" json:"-"`
+	Name     string    `gorm:"not null" json:"name"`
+	Address  string    `json:"address"`
+	Phone    string    `json:"phone"`
+	IsActive bool      `gorm:"default:true" json:"is_active"`
 }
 
 // User represents a system user
 type User struct {
 	BaseModel
-	TenantID     uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
-	Tenant       Tenant    `gorm:"foreignKey:TenantID" json:"-"`
-	Email        string    `gorm:"uniqueIndex;not null" json:"email"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	Name         string    `gorm:"not null" json:"name"`
-	Role         string    `gorm:"default:'cashier'" json:"role"` // owner, manager, cashier
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
+	TenantID     uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant       Tenant     `gorm:"foreignKey:TenantID" json:"-"`
+	OutletID     *uuid.UUID `gorm:"type:uuid" json:"outlet_id"` // Optional outlet assignment
+	Outlet       *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
+	Email        string     `gorm:"uniqueIndex;not null" json:"email"`
+	GoogleID     string     `gorm:"uniqueIndex" json:"-"` // For Google OAuth
+	PasswordHash string     `json:"-"`                     // Optional for OAuth users
+	Name         string     `gorm:"not null" json:"name"`
+	Role         string     `gorm:"default:'cashier'" json:"role"` // owner, manager, cashier
+	IsActive     bool       `gorm:"default:true" json:"is_active"`
 }
 
 // Category for products
@@ -100,6 +145,8 @@ type Transaction struct {
 	BaseModel
 	TenantID      uuid.UUID         `gorm:"type:uuid;not null" json:"tenant_id"`
 	Tenant        Tenant            `gorm:"foreignKey:TenantID" json:"-"`
+	OutletID      *uuid.UUID        `gorm:"type:uuid" json:"outlet_id"`
+	Outlet        *Outlet           `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
 	InvoiceNumber string            `gorm:"uniqueIndex;not null" json:"invoice_number"`
 	UserID        uuid.UUID         `gorm:"type:uuid;not null" json:"user_id"`
 	User          User              `gorm:"foreignKey:UserID" json:"user,omitempty"`
@@ -110,25 +157,55 @@ type Transaction struct {
 	Discount      float64           `gorm:"default:0" json:"discount"`
 	Tax           float64           `gorm:"default:0" json:"tax"`
 	Total         float64           `gorm:"not null" json:"total"`
-	Status        string            `gorm:"default:'completed'" json:"status"` // completed, voided
-	PaymentMethod string            `gorm:"default:'cash'" json:"payment_method"`
+	Status        string            `gorm:"default:'completed'" json:"status"` // completed, voided, pending
+	PaymentMethod string            `gorm:"default:'cash'" json:"payment_method"` // cash, qris, gopay, ovo, dana
+	PaymentRef    string            `json:"payment_ref"` // Midtrans transaction ID
+	IsSynced      bool              `gorm:"default:true" json:"is_synced"` // For offline support
 }
 
 // TransactionItem represents items in a transaction
 type TransactionItem struct {
-	ID            uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	TransactionID uuid.UUID   `gorm:"type:uuid;not null" json:"transaction_id"`
-	ProductID     uuid.UUID   `gorm:"type:uuid;not null" json:"product_id"`
-	Product       Product     `gorm:"foreignKey:ProductID" json:"product"`
-	Quantity      int         `gorm:"not null" json:"quantity"`
-	UnitPrice     float64     `gorm:"not null" json:"unit_price"`
-	Subtotal      float64     `gorm:"not null" json:"subtotal"`
+	ID            uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	TransactionID uuid.UUID `gorm:"type:uuid;not null" json:"transaction_id"`
+	ProductID     uuid.UUID `gorm:"type:uuid;not null" json:"product_id"`
+	Product       Product   `gorm:"foreignKey:ProductID" json:"product"`
+	Quantity      int       `gorm:"not null" json:"quantity"`
+	UnitPrice     float64   `gorm:"not null" json:"unit_price"`
+	Subtotal      float64   `gorm:"not null" json:"subtotal"`
+}
+
+// Invoice represents subscription billing invoices
+type Invoice struct {
+	BaseModel
+	SubscriptionID uuid.UUID `gorm:"type:uuid;not null" json:"subscription_id"`
+	InvoiceNumber  string    `gorm:"uniqueIndex;not null" json:"invoice_number"`
+	Amount         float64   `gorm:"not null" json:"amount"`
+	Status         string    `gorm:"default:'pending'" json:"status"` // pending, paid, failed
+	DueDate        time.Time `json:"due_date"`
+	PaidAt         *time.Time `json:"paid_at"`
+	PaymentRef     string    `json:"payment_ref"` // Midtrans payment ID
+}
+
+// EmployeeInvite represents pending employee invitations
+type EmployeeInvite struct {
+	BaseModel
+	TenantID     uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	InvitedBy    uuid.UUID  `gorm:"type:uuid;not null" json:"invited_by"` // Manager or Owner
+	Email        string     `gorm:"not null" json:"email"`
+	Role         string     `gorm:"default:'cashier'" json:"role"`
+	Status       string     `gorm:"default:'pending'" json:"status"` // pending, approved, rejected, accepted
+	ApprovedBy   *uuid.UUID `gorm:"type:uuid" json:"approved_by"` // Owner who approved
+	Token        string     `gorm:"uniqueIndex" json:"-"` // Invite token
+	ExpiresAt    time.Time  `json:"expires_at"`
 }
 
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&Tenant{},
+		&Subscription{},
+		&UsageMetrics{},
+		&Outlet{},
 		&User{},
 		&Category{},
 		&Product{},
@@ -137,5 +214,8 @@ func Migrate(db *gorm.DB) error {
 		&Customer{},
 		&Transaction{},
 		&TransactionItem{},
+		&Invoice{},
+		&EmployeeInvite{},
 	)
 }
+
