@@ -102,9 +102,20 @@ type Product struct {
 	SKU        string     `json:"sku"`
 	Price      float64    `gorm:"not null" json:"price"`
 	Cost       float64    `json:"cost"`
+	TaxRate    float64    `gorm:"default:0" json:"tax_rate"` // Tax percentage (e.g., 10 for 10%)
 	StockQty   int        `gorm:"default:0" json:"stock_qty"`
 	ImageURL   string     `json:"image_url"`
 	IsActive   bool       `gorm:"default:true" json:"is_active"`
+	Modifiers  []ProductModifier `gorm:"foreignKey:ProductID" json:"modifiers,omitempty"`
+}
+
+// ProductModifier represents add-ons/variations (e.g., sizes, toppings)
+type ProductModifier struct {
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	ProductID uuid.UUID `gorm:"type:uuid;not null" json:"product_id"`
+	Name      string    `gorm:"not null" json:"name"` // e.g., "Size", "Topping"
+	Options   string    `gorm:"type:text" json:"options"` // JSON array: [{"name":"Large", "price":5000}]
+	IsRequired bool     `gorm:"default:false" json:"is_required"`
 }
 
 // RawMaterial represents raw materials/ingredients
@@ -149,6 +160,7 @@ type Transaction struct {
 	OutletID      *uuid.UUID        `gorm:"type:uuid" json:"outlet_id"`
 	Outlet        *Outlet           `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
 	InvoiceNumber string            `gorm:"uniqueIndex;not null" json:"invoice_number"`
+	OrderNumber   int               `gorm:"not null" json:"order_number"` // Queue number, resets daily
 	UserID        uuid.UUID         `gorm:"type:uuid;not null" json:"user_id"`
 	User          User              `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	CustomerID    *uuid.UUID        `gorm:"type:uuid" json:"customer_id"`
@@ -210,6 +222,7 @@ func Migrate(db *gorm.DB) error {
 		&User{},
 		&Category{},
 		&Product{},
+		&ProductModifier{},
 		&RawMaterial{},
 		&ProductMaterial{},
 		&Customer{},

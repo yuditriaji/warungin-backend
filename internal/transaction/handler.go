@@ -66,9 +66,19 @@ func (h *Handler) Create(c *gin.Context) {
 	// Start transaction
 	tx := h.db.Begin()
 
-	// Calculate totals and build items
+	// Get next order number for today (queue number)
+	today := time.Now().Format("2006-01-02")
+	var lastOrder database.Transaction
+	var orderNumber int = 1
+	if err := tx.Where("tenant_id = ? AND DATE(created_at) = ?", tenantID, today).
+		Order("order_number DESC").First(&lastOrder).Error; err == nil {
+		orderNumber = lastOrder.OrderNumber + 1
+	}
+
+	// Calculate totals with per-product tax
 	var items []database.TransactionItem
 	var subtotal float64
+	var totalTax float64
 
 	for _, item := range req.Items {
 		var product database.Product
@@ -78,8 +88,11 @@ func (h *Handler) Create(c *gin.Context) {
 			return
 		}
 
-
 		itemSubtotal := product.Price * float64(item.Quantity)
+		// Calculate tax per product
+		itemTax := itemSubtotal * (product.TaxRate / 100)
+		totalTax += itemTax
+
 		items = append(items, database.TransactionItem{
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
@@ -106,7 +119,13 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
-	total := subtotal - req.Discount + req.Tax
+	// Use calculated tax if not provided from request
+	finalTax := req.Tax
+	if finalTax == 0 {
+		finalTax = totalTax
+	}
+
+	total := subtotal - req.Discount + finalTax
 	paymentMethod := req.PaymentMethod
 	if paymentMethod == "" {
 		paymentMethod = "cash"
@@ -118,12 +137,13 @@ func (h *Handler) Create(c *gin.Context) {
 	transaction := database.Transaction{
 		TenantID:      tenantID,
 		InvoiceNumber: invoiceNumber,
+		OrderNumber:   orderNumber,
 		UserID:        userID,
 		CustomerID:    req.CustomerID,
 		Items:         items,
 		Subtotal:      subtotal,
 		Discount:      req.Discount,
-		Tax:           req.Tax,
+		Tax:           finalTax,
 		Total:         total,
 		Status:        "completed",
 		PaymentMethod: paymentMethod,
