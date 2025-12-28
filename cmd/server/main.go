@@ -9,6 +9,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/auth"
 	"github.com/yuditriaji/warungin-backend/internal/dashboard"
 	"github.com/yuditriaji/warungin-backend/internal/product"
+	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"github.com/yuditriaji/warungin-backend/pkg/middleware"
@@ -81,6 +82,11 @@ func main() {
 			protected.GET("/transactions", transactionHandler.List)
 			protected.POST("/transactions", transactionHandler.Create)
 			protected.GET("/transactions/:id", transactionHandler.Get)
+
+			// Reports routes
+			reportsHandler := reports.NewHandler(db)
+			protected.GET("/reports/sales", reportsHandler.GetSalesReport)
+			protected.GET("/reports/products", reportsHandler.GetProductSalesReport)
 		}
 	}
 
