@@ -160,7 +160,7 @@ type Transaction struct {
 	OutletID      *uuid.UUID        `gorm:"type:uuid" json:"outlet_id"`
 	Outlet        *Outlet           `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
 	InvoiceNumber string            `gorm:"uniqueIndex;not null" json:"invoice_number"`
-	OrderNumber   int               `gorm:"not null" json:"order_number"` // Queue number, resets daily
+	OrderNumber   int               `gorm:"default:0" json:"order_number"` // Queue number, resets daily
 	UserID        uuid.UUID         `gorm:"type:uuid;not null" json:"user_id"`
 	User          User              `gorm:"foreignKey:UserID" json:"user,omitempty"`
 	CustomerID    *uuid.UUID        `gorm:"type:uuid" json:"customer_id"`
