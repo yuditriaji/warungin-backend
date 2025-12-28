@@ -1,0 +1,6 @@
+# https://render.com/docs/deploy-go
+# Build command should target the cmd/server directory
+
+# To configure on Render Dashboard:
+# Build Command: go build -tags netgo -ldflags '-s -w' -o app ./cmd/server
+# Start Command: ./app
