@@ -93,13 +93,17 @@ func (h *Handler) GetStats(c *gin.Context) {
 	stats.MonthTransactions = monthResult.Count
 
 	// Product counts
+	var totalProducts int64
 	h.db.Model(&database.Product{}).
 		Where("tenant_id = ? AND is_active = ?", tenantID, true).
-		Count((*int64)(&stats.TotalProducts))
+		Count(&totalProducts)
+	stats.TotalProducts = int(totalProducts)
 
+	var lowStockProducts int64
 	h.db.Model(&database.Product{}).
 		Where("tenant_id = ? AND is_active = ? AND stock_qty < ?", tenantID, true, 10).
-		Count((*int64)(&stats.LowStockProducts))
+		Count(&lowStockProducts)
+	stats.LowStockProducts = int(lowStockProducts)
 
 	c.JSON(http.StatusOK, gin.H{"data": stats})
 }
