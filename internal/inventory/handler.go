@@ -1,0 +1,175 @@
+package inventory
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/yuditriaji/warungin-backend/pkg/database"
+	"gorm.io/gorm"
+)
+
+type Handler struct {
+	db *gorm.DB
+}
+
+func NewHandler(db *gorm.DB) *Handler {
+	return &Handler{db: db}
+}
+
+type InventoryItem struct {
+	ProductID   uuid.UUID `json:"product_id"`
+	ProductName string    `json:"product_name"`
+	SKU         string    `json:"sku"`
+	StockQty    int       `json:"stock_qty"`
+	Price       float64   `json:"price"`
+	Cost        float64   `json:"cost"`
+	StockValue  float64   `json:"stock_value"`
+	Status      string    `json:"status"` // ok, low, out
+}
+
+type InventorySummary struct {
+	TotalProducts   int     `json:"total_products"`
+	TotalStockValue float64 `json:"total_stock_value"`
+	LowStockCount   int     `json:"low_stock_count"`
+	OutOfStockCount int     `json:"out_of_stock_count"`
+}
+
+// GetInventory returns inventory status for all products
+func (h *Handler) GetInventory(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	filter := c.Query("filter") // all, low, out
+
+	var products []database.Product
+	query := h.db.Where("tenant_id = ? AND is_active = ?", tenantID, true)
+	
+	switch filter {
+	case "low":
+		query = query.Where("stock_qty > 0 AND stock_qty < 10")
+	case "out":
+		query = query.Where("stock_qty <= 0")
+	}
+	
+	query.Order("stock_qty ASC").Find(&products)
+
+	var items []InventoryItem
+	for _, p := range products {
+		status := "ok"
+		if p.StockQty <= 0 {
+			status = "out"
+		} else if p.StockQty < 10 {
+			status = "low"
+		}
+		
+		items = append(items, InventoryItem{
+			ProductID:   p.ID,
+			ProductName: p.Name,
+			SKU:         p.SKU,
+			StockQty:    p.StockQty,
+			Price:       p.Price,
+			Cost:        p.Cost,
+			StockValue:  float64(p.StockQty) * p.Cost,
+			Status:      status,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": items})
+}
+
+// GetSummary returns inventory summary stats
+func (h *Handler) GetSummary(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+
+	var summary InventorySummary
+
+	// Total products
+	var totalProducts int64
+	h.db.Model(&database.Product{}).
+		Where("tenant_id = ? AND is_active = ?", tenantID, true).
+		Count(&totalProducts)
+	summary.TotalProducts = int(totalProducts)
+
+	// Total stock value
+	var stockValue struct {
+		Total float64
+	}
+	h.db.Model(&database.Product{}).
+		Select("COALESCE(SUM(stock_qty * cost), 0) as total").
+		Where("tenant_id = ? AND is_active = ?", tenantID, true).
+		Scan(&stockValue)
+	summary.TotalStockValue = stockValue.Total
+
+	// Low stock count
+	var lowStock int64
+	h.db.Model(&database.Product{}).
+		Where("tenant_id = ? AND is_active = ? AND stock_qty > 0 AND stock_qty < 10", tenantID, true).
+		Count(&lowStock)
+	summary.LowStockCount = int(lowStock)
+
+	// Out of stock count
+	var outOfStock int64
+	h.db.Model(&database.Product{}).
+		Where("tenant_id = ? AND is_active = ? AND stock_qty <= 0", tenantID, true).
+		Count(&outOfStock)
+	summary.OutOfStockCount = int(outOfStock)
+
+	c.JSON(http.StatusOK, gin.H{"data": summary})
+}
+
+// UpdateStock adjusts product stock
+type UpdateStockRequest struct {
+	Quantity int    `json:"quantity" binding:"required"` // can be negative
+	Note     string `json:"note"`
+}
+
+func (h *Handler) UpdateStock(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+	productID := c.Param("id")
+
+	var req UpdateStockRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var product database.Product
+	if err := h.db.Where("id = ? AND tenant_id = ?", productID, tenantID).First(&product).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		return
+	}
+
+	newQty := product.StockQty + req.Quantity
+	if newQty < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Stock cannot go below zero"})
+		return
+	}
+
+	product.StockQty = newQty
+	h.db.Save(&product)
+
+	c.JSON(http.StatusOK, gin.H{"data": product})
+}
+
+// GetAlerts returns products that need attention
+func (h *Handler) GetAlerts(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+
+	var lowStock []database.Product
+	h.db.Where("tenant_id = ? AND is_active = ? AND stock_qty > 0 AND stock_qty < 10", tenantID, true).
+		Order("stock_qty ASC").
+		Limit(10).
+		Find(&lowStock)
+
+	var outOfStock []database.Product
+	h.db.Where("tenant_id = ? AND is_active = ? AND stock_qty <= 0", tenantID, true).
+		Order("name ASC").
+		Limit(10).
+		Find(&outOfStock)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"low_stock":    lowStock,
+			"out_of_stock": outOfStock,
+		},
+	})
+}

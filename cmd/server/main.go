@@ -9,6 +9,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/auth"
 	"github.com/yuditriaji/warungin-backend/internal/customer"
 	"github.com/yuditriaji/warungin-backend/internal/dashboard"
+	"github.com/yuditriaji/warungin-backend/internal/inventory"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
@@ -97,6 +98,13 @@ func main() {
 			protected.PUT("/customers/:id", customerHandler.Update)
 			protected.DELETE("/customers/:id", customerHandler.Delete)
 			protected.GET("/customers/:id/stats", customerHandler.GetStats)
+
+			// Inventory routes
+			inventoryHandler := inventory.NewHandler(db)
+			protected.GET("/inventory", inventoryHandler.GetInventory)
+			protected.GET("/inventory/summary", inventoryHandler.GetSummary)
+			protected.GET("/inventory/alerts", inventoryHandler.GetAlerts)
+			protected.PUT("/inventory/:id/stock", inventoryHandler.UpdateStock)
 		}
 	}
 
