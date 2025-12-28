@@ -72,19 +72,22 @@ func main() {
 			protected.GET("/dashboard/stats", dashboardHandler.GetStats)
 			protected.GET("/dashboard/top-products", dashboardHandler.GetTopProducts)
 			protected.GET("/dashboard/recent-transactions", dashboardHandler.GetRecentTransactions)
+
+			// Limit checker
+			limitChecker := middleware.NewLimitChecker(db)
 			
-			// Product routes
+			// Product routes (with limit check)
 			productHandler := product.NewHandler(db)
 			protected.GET("/products", productHandler.List)
-			protected.POST("/products", productHandler.Create)
+			protected.POST("/products", limitChecker.CheckProductLimit(), productHandler.Create)
 			protected.GET("/products/:id", productHandler.Get)
 			protected.PUT("/products/:id", productHandler.Update)
 			protected.DELETE("/products/:id", productHandler.Delete)
 
-			// Transaction routes
+			// Transaction routes (with limit check)
 			transactionHandler := transaction.NewHandler(db)
 			protected.GET("/transactions", transactionHandler.List)
-			protected.POST("/transactions", transactionHandler.Create)
+			protected.POST("/transactions", limitChecker.CheckTransactionLimit(), transactionHandler.Create)
 			protected.GET("/transactions/:id", transactionHandler.Get)
 
 			// Reports routes
