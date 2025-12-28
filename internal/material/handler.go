@@ -18,11 +18,12 @@ func NewHandler(db *gorm.DB) *Handler {
 }
 
 type CreateMaterialInput struct {
-	Name      string  `json:"name" binding:"required"`
-	Unit      string  `json:"unit" binding:"required"`
-	UnitPrice float64 `json:"unit_price"`
-	StockQty  float64 `json:"stock_qty"`
-	Supplier  string  `json:"supplier"`
+	Name          string  `json:"name" binding:"required"`
+	Unit          string  `json:"unit" binding:"required"`
+	UnitPrice     float64 `json:"unit_price"`
+	StockQty      float64 `json:"stock_qty"`
+	MinStockLevel float64 `json:"min_stock_level"`
+	Supplier      string  `json:"supplier"`
 }
 
 // List returns all raw materials for tenant
@@ -51,13 +52,19 @@ func (h *Handler) Create(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	tenantUUID, _ := uuid.Parse(tenantID)
 
+	minStock := input.MinStockLevel
+	if minStock <= 0 {
+		minStock = 10 // Default
+	}
+
 	material := database.RawMaterial{
-		TenantID:  tenantUUID,
-		Name:      input.Name,
-		Unit:      input.Unit,
-		UnitPrice: input.UnitPrice,
-		StockQty:  input.StockQty,
-		Supplier:  input.Supplier,
+		TenantID:      tenantUUID,
+		Name:          input.Name,
+		Unit:          input.Unit,
+		UnitPrice:     input.UnitPrice,
+		StockQty:      input.StockQty,
+		MinStockLevel: minStock,
+		Supplier:      input.Supplier,
 	}
 
 	if err := h.db.Create(&material).Error; err != nil {
@@ -105,6 +112,9 @@ func (h *Handler) Update(c *gin.Context) {
 	material.Unit = input.Unit
 	material.UnitPrice = input.UnitPrice
 	material.StockQty = input.StockQty
+	if input.MinStockLevel > 0 {
+		material.MinStockLevel = input.MinStockLevel
+	}
 	material.Supplier = input.Supplier
 
 	h.db.Save(&material)
@@ -157,13 +167,13 @@ func (h *Handler) UpdateStock(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": material})
 }
 
-// GetAlerts returns materials with low stock
+// GetAlerts returns materials with low stock (using custom min_stock_level per material)
 func (h *Handler) GetAlerts(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 
-	// Low stock threshold: less than 10 units
+	// Low stock: stock_qty > 0 but below min_stock_level
 	var lowStock []database.RawMaterial
-	h.db.Where("tenant_id = ? AND stock_qty > 0 AND stock_qty < 10", tenantID).
+	h.db.Where("tenant_id = ? AND stock_qty > 0 AND stock_qty < min_stock_level", tenantID).
 		Order("stock_qty ASC").
 		Find(&lowStock)
 
