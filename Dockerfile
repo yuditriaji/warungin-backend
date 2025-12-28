@@ -6,14 +6,17 @@ WORKDIR /app
 # Install git (needed for go mod download)
 RUN apk add --no-cache git
 
-# Copy go mod files
-COPY go.mod go.sum* ./
+# Copy go mod file only first
+COPY go.mod ./
 
-# Download dependencies
+# Download dependencies and generate go.sum
 RUN go mod download
 
 # Copy source code
 COPY . .
+
+# Tidy modules (ensures go.sum is correct)
+RUN go mod tidy
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -tags netgo -ldflags '-s -w' -o app ./cmd/server
