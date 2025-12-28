@@ -134,11 +134,11 @@ func main() {
 			protected.PUT("/materials/:id/stock", materialHandler.UpdateStock)
 			protected.GET("/materials/alerts", materialHandler.GetAlerts)
 
-			// Product-Material linkage
-			protected.GET("/products/:product_id/materials", materialHandler.GetProductMaterials)
-			protected.POST("/products/:product_id/materials", materialHandler.LinkMaterial)
-			protected.DELETE("/products/:product_id/materials/:material_id", materialHandler.UnlinkMaterial)
-			protected.GET("/products/:product_id/cost", materialHandler.CalculateProductCost)
+			// Product-Material linkage (using separate path to avoid conflict with /products/:id)
+			protected.GET("/product-materials/:product_id", materialHandler.GetProductMaterials)
+			protected.POST("/product-materials", materialHandler.LinkMaterial)
+			protected.DELETE("/product-materials/:product_id/:material_id", materialHandler.UnlinkMaterial)
+			protected.GET("/product-materials/:product_id/cost", materialHandler.CalculateProductCost)
 		}
 
 		// Webhook (public, no auth)
