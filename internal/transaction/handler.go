@@ -78,6 +78,7 @@ func (h *Handler) Create(c *gin.Context) {
 			return
 		}
 
+
 		itemSubtotal := product.Price * float64(item.Quantity)
 		items = append(items, database.TransactionItem{
 			ProductID: item.ProductID,
@@ -92,6 +93,16 @@ func (h *Handler) Create(c *gin.Context) {
 			tx.Rollback()
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
 			return
+		}
+
+		// Auto-deduct raw materials linked to this product
+		var productMaterials []database.ProductMaterial
+		tx.Where("product_id = ?", item.ProductID).Find(&productMaterials)
+		for _, pm := range productMaterials {
+			deduction := pm.QuantityUsed * float64(item.Quantity)
+			tx.Model(&database.RawMaterial{}).
+				Where("id = ?", pm.MaterialID).
+				Update("stock_qty", gorm.Expr("stock_qty - ?", deduction))
 		}
 	}
 

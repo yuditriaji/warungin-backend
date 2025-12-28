@@ -10,6 +10,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/customer"
 	"github.com/yuditriaji/warungin-backend/internal/dashboard"
 	"github.com/yuditriaji/warungin-backend/internal/inventory"
+	"github.com/yuditriaji/warungin-backend/internal/material"
 	"github.com/yuditriaji/warungin-backend/internal/payment"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
@@ -122,6 +123,22 @@ func main() {
 			protected.GET("/subscription", subscriptionHandler.GetCurrent)
 			protected.GET("/subscription/usage", subscriptionHandler.GetUsage)
 			protected.POST("/subscription/upgrade", subscriptionHandler.Upgrade)
+
+			// Material routes
+			materialHandler := material.NewHandler(db)
+			protected.GET("/materials", materialHandler.List)
+			protected.POST("/materials", materialHandler.Create)
+			protected.GET("/materials/:id", materialHandler.Get)
+			protected.PUT("/materials/:id", materialHandler.Update)
+			protected.DELETE("/materials/:id", materialHandler.Delete)
+			protected.PUT("/materials/:id/stock", materialHandler.UpdateStock)
+			protected.GET("/materials/alerts", materialHandler.GetAlerts)
+
+			// Product-Material linkage
+			protected.GET("/products/:product_id/materials", materialHandler.GetProductMaterials)
+			protected.POST("/products/:product_id/materials", materialHandler.LinkMaterial)
+			protected.DELETE("/products/:product_id/materials/:material_id", materialHandler.UnlinkMaterial)
+			protected.GET("/products/:product_id/cost", materialHandler.CalculateProductCost)
 		}
 
 		// Webhook (public, no auth)
