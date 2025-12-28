@@ -400,13 +400,13 @@ func (h *Handler) GetMe(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
 
 	var user database.User
-	if err := h.db.First(&user, userID).Error; err != nil {
+	if err := h.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	var tenant database.Tenant
-	if err := h.db.Preload("Subscription").First(&tenant, tenantID).Error; err != nil {
+	if err := h.db.Preload("Subscription").Where("id = ?", tenantID).First(&tenant).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Business not found"})
 		return
 	}
