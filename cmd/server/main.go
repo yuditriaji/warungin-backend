@@ -13,6 +13,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/payment"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
+	"github.com/yuditriaji/warungin-backend/internal/subscription"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"github.com/yuditriaji/warungin-backend/pkg/middleware"
@@ -111,6 +112,13 @@ func main() {
 			paymentHandler := payment.NewHandler(db)
 			protected.POST("/payment/qris", paymentHandler.CreateQRIS)
 			protected.GET("/payment/status/:order_id", paymentHandler.CheckStatus)
+
+			// Subscription routes
+			subscriptionHandler := subscription.NewHandler(db)
+			protected.GET("/subscription/plans", subscriptionHandler.GetPlans)
+			protected.GET("/subscription", subscriptionHandler.GetCurrent)
+			protected.GET("/subscription/usage", subscriptionHandler.GetUsage)
+			protected.POST("/subscription/upgrade", subscriptionHandler.Upgrade)
 		}
 
 		// Webhook (public, no auth)
