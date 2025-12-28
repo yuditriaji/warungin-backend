@@ -185,7 +185,7 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, expiresIn := generateTokens(user, tenant)
+	accessToken, refreshToken, _ := generateTokens(user, tenant)
 
 	// Get frontend URL for redirect
 	frontendURL := os.Getenv("FRONTEND_URL")
