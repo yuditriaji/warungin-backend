@@ -10,6 +10,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/customer"
 	"github.com/yuditriaji/warungin-backend/internal/dashboard"
 	"github.com/yuditriaji/warungin-backend/internal/inventory"
+	"github.com/yuditriaji/warungin-backend/internal/payment"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
@@ -105,7 +106,16 @@ func main() {
 			protected.GET("/inventory/summary", inventoryHandler.GetSummary)
 			protected.GET("/inventory/alerts", inventoryHandler.GetAlerts)
 			protected.PUT("/inventory/:id/stock", inventoryHandler.UpdateStock)
+
+			// Payment routes
+			paymentHandler := payment.NewHandler(db)
+			protected.POST("/payment/qris", paymentHandler.CreateQRIS)
+			protected.GET("/payment/status/:order_id", paymentHandler.CheckStatus)
 		}
+
+		// Webhook (public, no auth)
+		paymentHandler := payment.NewHandler(db)
+		v1.POST("/webhook/midtrans", paymentHandler.Webhook)
 	}
 
 	// Start server
