@@ -212,6 +212,21 @@ type EmployeeInvite struct {
 	ExpiresAt    time.Time  `json:"expires_at"`
 }
 
+// ActivityLog tracks staff actions for audit trail
+type ActivityLog struct {
+	ID         uuid.UUID  `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	TenantID   uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	UserID     uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
+	User       User       `gorm:"foreignKey:UserID" json:"user"`
+	OutletID   *uuid.UUID `gorm:"type:uuid" json:"outlet_id"`
+	Action     string     `gorm:"not null" json:"action"` // login, logout, sale, void, stock_adjust, etc.
+	EntityType string     `json:"entity_type"` // transaction, product, material, etc.
+	EntityID   *uuid.UUID `gorm:"type:uuid" json:"entity_id"`
+	Details    string     `gorm:"type:text" json:"details"` // JSON details
+	IPAddress  string     `json:"ip_address"`
+	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"created_at"`
+}
+
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -230,6 +245,7 @@ func Migrate(db *gorm.DB) error {
 		&TransactionItem{},
 		&Invoice{},
 		&EmployeeInvite{},
+		&ActivityLog{},
 	)
 }
 

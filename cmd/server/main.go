@@ -11,11 +11,13 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/dashboard"
 	"github.com/yuditriaji/warungin-backend/internal/inventory"
 	"github.com/yuditriaji/warungin-backend/internal/material"
+	"github.com/yuditriaji/warungin-backend/internal/outlet"
 	"github.com/yuditriaji/warungin-backend/internal/payment"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/subscription"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
+	"github.com/yuditriaji/warungin-backend/internal/user"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"github.com/yuditriaji/warungin-backend/pkg/middleware"
 )
@@ -139,6 +141,24 @@ func main() {
 			protected.POST("/product-materials", materialHandler.LinkMaterial)
 			protected.DELETE("/product-materials/:product_id/:material_id", materialHandler.UnlinkMaterial)
 			protected.GET("/product-materials/:product_id/cost", materialHandler.CalculateProductCost)
+
+			// Outlet routes
+			outletHandler := outlet.NewHandler(db)
+			protected.GET("/outlets", outletHandler.List)
+			protected.POST("/outlets", outletHandler.Create)
+			protected.GET("/outlets/:id", outletHandler.Get)
+			protected.PUT("/outlets/:id", outletHandler.Update)
+			protected.DELETE("/outlets/:id", outletHandler.Delete)
+			protected.GET("/outlets/:id/stats", outletHandler.GetStats)
+			protected.POST("/outlets/:id/switch", outletHandler.SwitchOutlet)
+
+			// Staff routes
+			userHandler := user.NewHandler(db)
+			protected.GET("/staff", userHandler.ListStaff)
+			protected.POST("/staff", userHandler.CreateStaff)
+			protected.PUT("/staff/:id", userHandler.UpdateStaff)
+			protected.DELETE("/staff/:id", userHandler.DeleteStaff)
+			protected.GET("/staff/logs", userHandler.GetActivityLogs)
 		}
 
 		// Webhook (public, no auth)
