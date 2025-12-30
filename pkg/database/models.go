@@ -42,7 +42,7 @@ type Subscription struct {
 	DataRetentionDays      int        `gorm:"default:30" json:"data_retention_days"`
 	CurrentPeriodStart     time.Time  `json:"current_period_start"`
 	CurrentPeriodEnd       time.Time  `json:"current_period_end"`
-	PaymentGatewayID       string     `json:"payment_gateway_id"` // Midtrans subscription ID
+	PaymentGatewayID       string     `json:"-"` // Hidden - Midtrans subscription ID
 }
 
 // UsageMetrics tracks tenant usage per period

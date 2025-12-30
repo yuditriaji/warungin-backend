@@ -193,10 +193,15 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 		frontendURL = "http://localhost:3000"
 	}
 
-	// Redirect to frontend with tokens
-	redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s&is_new_user=%t",
-		frontendURL, accessToken, refreshToken, isNewUser)
-	
+	// Determine if production (for secure cookies)
+	isProduction := os.Getenv("GO_ENV") == "production"
+
+	// Set tokens as HTTP-only cookies (secure in production)
+	c.SetCookie("access_token", accessToken, 3600, "/", "", isProduction, true)        // HttpOnly
+	c.SetCookie("refresh_token", refreshToken, 7*24*3600, "/", "", isProduction, true) // HttpOnly
+
+	// Redirect to frontend (tokens now in cookies, not URL)
+	redirectURL := fmt.Sprintf("%s/auth/callback?is_new_user=%t", frontendURL, isNewUser)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
