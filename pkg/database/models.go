@@ -7,6 +7,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// TenantSettings represents configurable settings for a tenant
+type TenantSettings struct {
+	QRISEnabled  bool   `json:"qris_enabled"`   // Whether QRIS payment is enabled
+	QRISImageURL string `json:"qris_image_url"` // URL to merchant's static QRIS image
+	QRISLabel    string `json:"qris_label"`     // Display name, e.g., "BCA QRIS"
+}
+
 // Base model for all entities
 type BaseModel struct {
 	ID        uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`

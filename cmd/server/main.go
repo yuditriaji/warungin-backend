@@ -16,6 +16,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/subscription"
+	"github.com/yuditriaji/warungin-backend/internal/tenant"
 	"github.com/yuditriaji/warungin-backend/internal/transaction"
 	"github.com/yuditriaji/warungin-backend/internal/user"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
@@ -125,6 +126,11 @@ func main() {
 			protected.GET("/subscription", subscriptionHandler.GetCurrent)
 			protected.GET("/subscription/usage", subscriptionHandler.GetUsage)
 			protected.POST("/subscription/upgrade", subscriptionHandler.Upgrade)
+
+			// Tenant settings routes
+			tenantHandler := tenant.NewHandler(db)
+			protected.GET("/tenant/settings", tenantHandler.GetSettings)
+			protected.PUT("/tenant/settings", tenantHandler.UpdateSettings)
 
 			// Material routes
 			materialHandler := material.NewHandler(db)
