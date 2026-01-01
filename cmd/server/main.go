@@ -131,6 +131,7 @@ func main() {
 			tenantHandler := tenant.NewHandler(db)
 			protected.GET("/tenant/settings", tenantHandler.GetSettings)
 			protected.PUT("/tenant/settings", tenantHandler.UpdateSettings)
+			protected.POST("/tenant/qris-upload", tenantHandler.UploadQRIS)
 
 			// Material routes
 			materialHandler := material.NewHandler(db)

@@ -1,8 +1,11 @@
 package tenant
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
@@ -89,5 +92,73 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data":    settings,
 		"message": "Settings updated successfully",
+	})
+}
+
+// UploadQRIS handles QRIS image file upload and stores as base64
+func (h *Handler) UploadQRIS(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+
+	// Get uploaded file (max 500KB)
+	file, header, err := c.Request.FormFile("qris_image")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
+		return
+	}
+	defer file.Close()
+
+	// Validate file size (max 500KB)
+	if header.Size > 500*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File too large. Maximum 500KB allowed"})
+		return
+	}
+
+	// Validate content type
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only image files are allowed"})
+		return
+	}
+
+	// Read file content
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
+		return
+	}
+
+	// Convert to base64 data URI
+	base64Data := base64.StdEncoding.EncodeToString(fileBytes)
+	dataURI := "data:" + contentType + ";base64," + base64Data
+
+	// Get tenant
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", tenantID).First(&tenant).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+		return
+	}
+
+	// Parse existing settings
+	var settings database.TenantSettings
+	if tenant.Settings != "" && tenant.Settings != "{}" {
+		json.Unmarshal([]byte(tenant.Settings), &settings)
+	}
+
+	// Update QRIS image URL with base64 data URI
+	settings.QRISImageURL = dataURI
+	settings.QRISEnabled = true
+
+	// Save settings
+	settingsJSON, _ := json.Marshal(settings)
+	tenant.Settings = string(settingsJSON)
+
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save QRIS image"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":    settings,
+		"message": "QRIS image uploaded successfully",
 	})
 }
