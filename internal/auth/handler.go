@@ -196,9 +196,10 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 	// Determine if production (for secure cookies)
 	isProduction := os.Getenv("GO_ENV") == "production"
 
-	// Set tokens as HTTP-only cookies (secure in production)
-	c.SetCookie("access_token", accessToken, 3600, "/", "", isProduction, true)        // HttpOnly
-	c.SetCookie("refresh_token", refreshToken, 7*24*3600, "/", "", isProduction, true) // HttpOnly
+	// Set tokens as cookies (readable by JavaScript for the callback page)
+	// Security note: Frontend immediately transfers these to localStorage and clears the cookies
+	c.SetCookie("access_token", accessToken, 3600, "/", "", isProduction, false)        // Not HttpOnly so JS can read
+	c.SetCookie("refresh_token", refreshToken, 7*24*3600, "/", "", isProduction, false) // Not HttpOnly so JS can read
 
 	// Redirect to frontend (tokens now in cookies, not URL)
 	redirectURL := fmt.Sprintf("%s/auth/callback?is_new_user=%t", frontendURL, isNewUser)
