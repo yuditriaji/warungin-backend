@@ -166,8 +166,12 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 	var subscription database.Subscription
 	h.db.Where("tenant_id = ?", tenantID).First(&subscription)
 
+	// Generate unique invoice number using external ID
+	invoiceNumber := fmt.Sprintf("INV-%s", externalID)
+
 	invoice := database.Invoice{
 		SubscriptionID: subscription.ID,
+		InvoiceNumber:  invoiceNumber,
 		Amount:         price,
 		Status:         "pending",
 		DueDate:        expiresAt,
