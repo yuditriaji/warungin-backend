@@ -37,48 +37,48 @@ var Plans = map[string]PlanInfo{
 		Name:                   "Gratis",
 		Price:                  0,
 		MaxUsers:               1,
-		MaxProducts:            20,
-		MaxTransactionsDaily:   20,
+		MaxProducts:            50,
+		MaxTransactionsDaily:   30,
 		MaxTransactionsMonthly: 0,
 		MaxOutlets:             1,
 		DataRetentionDays:      30,
-		Features:               []string{"POS dasar", "1 pengguna", "20 produk", "20 transaksi/hari"},
+		Features:               []string{"POS dasar", "1 pengguna", "50 produk", "30 transaksi/hari", "QRIS", "Diskon & promo"},
 	},
 	"pemula": {
 		ID:                     "pemula",
 		Name:                   "Pemula",
-		Price:                  99000,
+		Price:                  49000,
 		MaxUsers:               3,
-		MaxProducts:            100,
-		MaxTransactionsDaily:   0,
-		MaxTransactionsMonthly: 1000,
+		MaxProducts:            200,
+		MaxTransactionsDaily:   0, // unlimited
+		MaxTransactionsMonthly: 0, // unlimited
 		MaxOutlets:             1,
 		DataRetentionDays:      365,
-		Features:               []string{"Semua fitur Gratis", "3 pengguna", "100 produk", "1000 transaksi/bulan", "Laporan"},
+		Features:               []string{"Semua fitur Gratis", "3 pengguna", "200 produk", "Unlimited transaksi", "Kelola bahan baku", "Auto-deduct ingredien", "Custom logo struk", "Laporan laba/rugi", "Export CSV/Excel"},
 	},
 	"bisnis": {
 		ID:                     "bisnis",
 		Name:                   "Bisnis",
-		Price:                  249000,
+		Price:                  149000,
 		MaxUsers:               10,
-		MaxProducts:            1000,
+		MaxProducts:            0, // unlimited
 		MaxTransactionsDaily:   0,
-		MaxTransactionsMonthly: 0, // unlimited
+		MaxTransactionsMonthly: 0,
 		MaxOutlets:             3,
-		DataRetentionDays:      365,
-		Features:               []string{"Semua fitur Pemula", "10 pengguna", "1000 produk", "Unlimited transaksi", "3 outlet"},
+		DataRetentionDays:      365 * 3,
+		Features:               []string{"Semua fitur Pemula", "10 pengguna", "Unlimited produk", "3 outlet", "Role Manager", "Laporan per-outlet", "Log aktivitas staff", "WhatsApp support"},
 	},
 	"enterprise": {
 		ID:                     "enterprise",
 		Name:                   "Enterprise",
-		Price:                  499000,
+		Price:                  0, // Custom
 		MaxUsers:               0, // unlimited
-		MaxProducts:            0, // unlimited
+		MaxProducts:            0,
 		MaxTransactionsDaily:   0,
 		MaxTransactionsMonthly: 0,
 		MaxOutlets:             0, // unlimited
-		DataRetentionDays:      365,
-		Features:               []string{"Semua fitur Bisnis", "Unlimited semua", "Prioritas support", "Custom integrasi"},
+		DataRetentionDays:      0, // forever
+		Features:               []string{"Semua fitur Bisnis", "Unlimited semua", "Inventori terpusat", "Account manager", "SLA support", "Custom integrasi"},
 	},
 }
 

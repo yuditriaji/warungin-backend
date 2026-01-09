@@ -127,6 +127,11 @@ func main() {
 			protected.GET("/subscription/usage", subscriptionHandler.GetUsage)
 			protected.POST("/subscription/upgrade", subscriptionHandler.Upgrade)
 
+			// Payment routes (Xendit)
+			paymentH := payment.NewHandler(db)
+			protected.POST("/payment/invoice", paymentH.CreateSubscriptionInvoice)
+			protected.GET("/payment/invoice/:invoice_id/status", paymentH.GetInvoiceStatus)
+
 			// Tenant settings routes
 			tenantHandler := tenant.NewHandler(db)
 			protected.GET("/tenant/settings", tenantHandler.GetSettings)
@@ -168,9 +173,10 @@ func main() {
 			protected.GET("/staff/logs", userHandler.GetActivityLogs)
 		}
 
-		// Webhook (public, no auth)
+		// Webhooks (public, no auth)
 		paymentHandler := payment.NewHandler(db)
-		v1.POST("/webhook/midtrans", paymentHandler.Webhook)
+		v1.POST("/webhook/xendit", paymentHandler.XenditWebhook)
+		v1.POST("/webhook/midtrans", paymentHandler.Webhook) // Legacy support
 	}
 
 	// Start server
