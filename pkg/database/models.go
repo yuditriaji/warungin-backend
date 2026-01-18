@@ -140,12 +140,14 @@ type RawMaterial struct {
 
 // ProductMaterial links products to raw materials
 type ProductMaterial struct {
-	ID           uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
-	ProductID    uuid.UUID   `gorm:"type:uuid;not null" json:"product_id"`
-	Product      Product     `gorm:"foreignKey:ProductID" json:"-"`
-	MaterialID   uuid.UUID   `gorm:"type:uuid;not null" json:"material_id"`
-	Material     RawMaterial `gorm:"foreignKey:MaterialID" json:"material"`
-	QuantityUsed float64     `gorm:"not null" json:"quantity_used"`
+	ID             uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	ProductID      uuid.UUID   `gorm:"type:uuid;not null" json:"product_id"`
+	Product        Product     `gorm:"foreignKey:ProductID" json:"-"`
+	MaterialID     uuid.UUID   `gorm:"type:uuid;not null" json:"material_id"`
+	Material       RawMaterial `gorm:"foreignKey:MaterialID" json:"material"`
+	QuantityUsed   float64     `gorm:"not null" json:"quantity_used"`
+	UsedUnit       string      `json:"used_unit"`       // Unit used in recipe (can differ from material unit)
+	ConversionRate float64     `gorm:"default:1" json:"conversion_rate"` // Multiply to convert to material unit
 }
 
 // Customer represents a buyer

@@ -193,9 +193,11 @@ func (h *Handler) GetAlerts(c *gin.Context) {
 // === Product-Material Linkage ===
 
 type LinkMaterialInput struct {
-	ProductID    string  `json:"product_id" binding:"required"`
-	MaterialID   string  `json:"material_id" binding:"required"`
-	QuantityUsed float64 `json:"quantity_used" binding:"required"`
+	ProductID      string  `json:"product_id" binding:"required"`
+	MaterialID     string  `json:"material_id" binding:"required"`
+	QuantityUsed   float64 `json:"quantity_used" binding:"required"`
+	UsedUnit       string  `json:"used_unit"`        // Optional: unit used in recipe
+	ConversionRate float64 `json:"conversion_rate"` // Optional: defaults to 1
 }
 
 // GetProductMaterials returns materials linked to a product
@@ -210,10 +212,15 @@ func (h *Handler) GetProductMaterials(c *gin.Context) {
 		return
 	}
 
-	// Calculate total material cost
+	// Calculate total material cost (considering conversion rate)
 	var totalCost float64
 	for _, link := range links {
-		totalCost += link.Material.UnitPrice * link.QuantityUsed
+		convRate := link.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		// Cost = quantity * conversion_rate * unit_price
+		totalCost += link.Material.UnitPrice * link.QuantityUsed * convRate
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -233,21 +240,31 @@ func (h *Handler) LinkMaterial(c *gin.Context) {
 	productUUID, _ := uuid.Parse(input.ProductID)
 	materialUUID, _ := uuid.Parse(input.MaterialID)
 
+	// Default conversion rate to 1 if not provided
+	conversionRate := input.ConversionRate
+	if conversionRate <= 0 {
+		conversionRate = 1
+	}
+
 	// Check if already linked
 	var existing database.ProductMaterial
 	if h.db.Where("product_id = ? AND material_id = ?", productUUID, materialUUID).
 		First(&existing).Error == nil {
-		// Update quantity
+		// Update quantity and conversion settings
 		existing.QuantityUsed = input.QuantityUsed
+		existing.UsedUnit = input.UsedUnit
+		existing.ConversionRate = conversionRate
 		h.db.Save(&existing)
 		c.JSON(http.StatusOK, gin.H{"data": existing})
 		return
 	}
 
 	link := database.ProductMaterial{
-		ProductID:    productUUID,
-		MaterialID:   materialUUID,
-		QuantityUsed: input.QuantityUsed,
+		ProductID:      productUUID,
+		MaterialID:     materialUUID,
+		QuantityUsed:   input.QuantityUsed,
+		UsedUnit:       input.UsedUnit,
+		ConversionRate: conversionRate,
 	}
 
 	if err := h.db.Create(&link).Error; err != nil {
@@ -283,20 +300,33 @@ func (h *Handler) CalculateProductCost(c *gin.Context) {
 	var totalCost float64
 	var breakdown []gin.H
 	for _, link := range links {
-		cost := link.Material.UnitPrice * link.QuantityUsed
+		convRate := link.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		// Cost = quantity * conversion_rate * unit_price
+		cost := link.Material.UnitPrice * link.QuantityUsed * convRate
 		totalCost += cost
+		
+		usedUnit := link.UsedUnit
+		if usedUnit == "" {
+			usedUnit = link.Material.Unit
+		}
+		
 		breakdown = append(breakdown, gin.H{
-			"material":     link.Material.Name,
-			"quantity":     link.QuantityUsed,
-			"unit":         link.Material.Unit,
-			"unit_price":   link.Material.UnitPrice,
-			"cost":         cost,
+			"material":        link.Material.Name,
+			"quantity":        link.QuantityUsed,
+			"used_unit":       usedUnit,
+			"material_unit":   link.Material.Unit,
+			"conversion_rate": convRate,
+			"unit_price":      link.Material.UnitPrice,
+			"cost":            cost,
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"product_id":  productID,
-		"total_cost":  totalCost,
-		"breakdown":   breakdown,
+		"product_id": productID,
+		"total_cost": totalCost,
+		"breakdown":  breakdown,
 	})
 }
