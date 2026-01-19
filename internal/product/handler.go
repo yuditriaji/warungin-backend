@@ -25,16 +25,23 @@ type CreateProductRequest struct {
 	StockQty   int        `json:"stock_qty"`
 	CategoryID *uuid.UUID `json:"category_id"`
 	ImageURL   string     `json:"image_url"`
+	OutletID   string     `json:"outlet_id"`
 }
 
-// List returns all products for the tenant
+// List returns all products for the tenant, optionally filtered by outlet
 func (h *Handler) List(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
+	outletID := c.Query("outlet_id")
+
+	query := h.db.Where("tenant_id = ?", tenantID)
+	
+	// Filter by outlet_id if provided
+	if outletID != "" {
+		query = query.Where("outlet_id = ?", outletID)
+	}
 
 	var products []database.Product
-	if err := h.db.Where("tenant_id = ?", tenantID).
-		Preload("Category").
-		Find(&products).Error; err != nil {
+	if err := query.Preload("Category").Preload("Outlet").Find(&products).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch products"})
 		return
 	}
@@ -63,6 +70,14 @@ func (h *Handler) Create(c *gin.Context) {
 		CategoryID: req.CategoryID,
 		ImageURL:   req.ImageURL,
 		IsActive:   true,
+	}
+
+	// Set outlet if provided
+	if req.OutletID != "" {
+		outletUUID, err := uuid.Parse(req.OutletID)
+		if err == nil {
+			product.OutletID = &outletUUID
+		}
 	}
 
 	if err := h.db.Create(&product).Error; err != nil {
