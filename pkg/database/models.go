@@ -83,7 +83,7 @@ type User struct {
 	OutletID     *uuid.UUID `gorm:"type:uuid" json:"outlet_id"` // Optional outlet assignment
 	Outlet       *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
 	Email        string     `gorm:"uniqueIndex;not null" json:"email"`
-	GoogleID     string     `gorm:"uniqueIndex" json:"-"` // For Google OAuth
+	GoogleID     string     `gorm:"index" json:"-"` // For Google OAuth (not unique to allow null for staff)
 	PasswordHash string     `json:"-"`                     // Optional for OAuth users
 	Name         string     `gorm:"not null" json:"name"`
 	Role         string     `gorm:"default:'cashier'" json:"role"` // owner, manager, cashier
