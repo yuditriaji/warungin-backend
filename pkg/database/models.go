@@ -103,6 +103,8 @@ type Product struct {
 	BaseModel
 	TenantID   uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
 	Tenant     Tenant     `gorm:"foreignKey:TenantID" json:"-"`
+	OutletID   *uuid.UUID `gorm:"type:uuid" json:"outlet_id"`
+	Outlet     *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
 	CategoryID *uuid.UUID `gorm:"type:uuid" json:"category_id"`
 	Category   *Category  `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
 	Name       string     `gorm:"not null" json:"name"`
