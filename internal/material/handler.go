@@ -24,16 +24,23 @@ type CreateMaterialInput struct {
 	StockQty      float64 `json:"stock_qty"`
 	MinStockLevel float64 `json:"min_stock_level"`
 	Supplier      string  `json:"supplier"`
+	OutletID      string  `json:"outlet_id"` // Optional outlet assignment
 }
 
-// List returns all raw materials for tenant
+// List returns all raw materials for tenant, optionally filtered by outlet
 func (h *Handler) List(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
+	outletID := c.Query("outlet_id")
+
+	query := h.db.Where("tenant_id = ?", tenantID)
+	
+	// Filter by outlet_id if provided
+	if outletID != "" {
+		query = query.Where("outlet_id = ?", outletID)
+	}
 
 	var materials []database.RawMaterial
-	if err := h.db.Where("tenant_id = ?", tenantID).
-		Order("name ASC").
-		Find(&materials).Error; err != nil {
+	if err := query.Preload("Outlet").Order("name ASC").Find(&materials).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -65,6 +72,14 @@ func (h *Handler) Create(c *gin.Context) {
 		StockQty:      input.StockQty,
 		MinStockLevel: minStock,
 		Supplier:      input.Supplier,
+	}
+
+	// Set outlet if provided
+	if input.OutletID != "" {
+		outletUUID, err := uuid.Parse(input.OutletID)
+		if err == nil {
+			material.OutletID = &outletUUID
+		}
 	}
 
 	if err := h.db.Create(&material).Error; err != nil {

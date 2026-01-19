@@ -128,14 +128,16 @@ type ProductModifier struct {
 // RawMaterial represents raw materials/ingredients
 type RawMaterial struct {
 	BaseModel
-	TenantID      uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
-	Tenant        Tenant    `gorm:"foreignKey:TenantID" json:"-"`
-	Name          string    `gorm:"not null" json:"name"`
-	Unit          string    `gorm:"not null" json:"unit"` // kg, liter, pcs, etc.
-	UnitPrice     float64   `json:"unit_price"`
-	StockQty      float64   `gorm:"default:0" json:"stock_qty"`
-	MinStockLevel float64   `gorm:"default:10" json:"min_stock_level"` // Alert threshold
-	Supplier      string    `json:"supplier"`
+	TenantID      uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant        Tenant     `gorm:"foreignKey:TenantID" json:"-"`
+	OutletID      *uuid.UUID `gorm:"type:uuid" json:"outlet_id"` // Optional outlet assignment
+	Outlet        *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
+	Name          string     `gorm:"not null" json:"name"`
+	Unit          string     `gorm:"not null" json:"unit"` // kg, liter, pcs, etc.
+	UnitPrice     float64    `json:"unit_price"`
+	StockQty      float64    `gorm:"default:0" json:"stock_qty"`
+	MinStockLevel float64    `gorm:"default:10" json:"min_stock_level"` // Alert threshold
+	Supplier      string     `json:"supplier"`
 }
 
 // ProductMaterial links products to raw materials
