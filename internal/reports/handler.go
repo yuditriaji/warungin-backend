@@ -20,6 +20,7 @@ func NewHandler(db *gorm.DB) *Handler {
 type SalesReportRequest struct {
 	StartDate string `form:"start_date"` // Format: 2024-01-01
 	EndDate   string `form:"end_date"`   // Format: 2024-01-31
+	OutletID  string `form:"outlet_id"`  // Optional outlet filter
 }
 
 type DailySales struct {
@@ -76,11 +77,16 @@ func (h *Handler) GetSalesReport(c *gin.Context) {
 		Sales        float64
 		Transactions int64
 	}
-	h.db.Model(&database.Transaction{}).
+	totalsQuery := h.db.Model(&database.Transaction{}).
 		Select("COALESCE(SUM(total), 0) as sales, COUNT(*) as transactions").
 		Where("tenant_id = ? AND created_at >= ? AND created_at <= ? AND status = ?", 
-			tenantID, startDate, endDate, "completed").
-		Scan(&totals)
+			tenantID, startDate, endDate, "completed")
+	
+	// Add outlet filter if provided
+	if req.OutletID != "" {
+		totalsQuery = totalsQuery.Where("outlet_id = ?", req.OutletID)
+	}
+	totalsQuery.Scan(&totals)
 	
 	report.TotalSales = totals.Sales
 	report.TotalTransactions = int(totals.Transactions)
@@ -93,26 +99,33 @@ func (h *Handler) GetSalesReport(c *gin.Context) {
 		ItemsSold int64
 		TotalCost float64
 	}
-	h.db.Model(&database.TransactionItem{}).
+	itemsQuery := h.db.Model(&database.TransactionItem{}).
 		Select("COALESCE(SUM(transaction_items.quantity), 0) as items_sold, COALESCE(SUM(products.cost * transaction_items.quantity), 0) as total_cost").
 		Joins("JOIN transactions ON transaction_items.transaction_id = transactions.id").
 		Joins("JOIN products ON transaction_items.product_id = products.id").
 		Where("transactions.tenant_id = ? AND transactions.created_at >= ? AND transactions.created_at <= ? AND transactions.status = ?",
-			tenantID, startDate, endDate, "completed").
-		Scan(&itemStats)
+			tenantID, startDate, endDate, "completed")
+	
+	if req.OutletID != "" {
+		itemsQuery = itemsQuery.Where("transactions.outlet_id = ?", req.OutletID)
+	}
+	itemsQuery.Scan(&itemStats)
 	
 	report.TotalItemsSold = int(itemStats.ItemsSold)
 	report.TotalCost = itemStats.TotalCost
 	report.GrossProfit = report.TotalSales - report.TotalCost
 
 	// Get daily breakdown
-	rows, _ := h.db.Model(&database.Transaction{}).
+	dailyQuery := h.db.Model(&database.Transaction{}).
 		Select("DATE(created_at) as date, COALESCE(SUM(total), 0) as sales, COUNT(*) as transactions").
 		Where("tenant_id = ? AND created_at >= ? AND created_at <= ? AND status = ?",
-			tenantID, startDate, endDate, "completed").
-		Group("DATE(created_at)").
-		Order("date ASC").
-		Rows()
+			tenantID, startDate, endDate, "completed")
+	
+	if req.OutletID != "" {
+		dailyQuery = dailyQuery.Where("outlet_id = ?", req.OutletID)
+	}
+	
+	rows, _ := dailyQuery.Group("DATE(created_at)").Order("date ASC").Rows()
 	
 	if rows != nil {
 		defer rows.Close()
@@ -158,7 +171,7 @@ func (h *Handler) GetProductSalesReport(c *gin.Context) {
 	}
 
 	var products []ProductSalesReport
-	h.db.Model(&database.TransactionItem{}).
+	productsQuery := h.db.Model(&database.TransactionItem{}).
 		Select(`
 			transaction_items.product_id, 
 			products.name as product_name, 
@@ -170,8 +183,13 @@ func (h *Handler) GetProductSalesReport(c *gin.Context) {
 		Joins("JOIN transactions ON transaction_items.transaction_id = transactions.id").
 		Joins("JOIN products ON transaction_items.product_id = products.id").
 		Where("transactions.tenant_id = ? AND transactions.created_at >= ? AND transactions.created_at <= ? AND transactions.status = ?",
-			tenantID, startDate, endDate, "completed").
-		Group("transaction_items.product_id, products.name").
+			tenantID, startDate, endDate, "completed")
+	
+	if req.OutletID != "" {
+		productsQuery = productsQuery.Where("transactions.outlet_id = ?", req.OutletID)
+	}
+	
+	productsQuery.Group("transaction_items.product_id, products.name").
 		Order("total_sales DESC").
 		Scan(&products)
 
