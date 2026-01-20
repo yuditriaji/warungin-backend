@@ -93,7 +93,8 @@ func main() {
 			transactionHandler := transaction.NewHandler(db)
 			protected.GET("/transactions", transactionHandler.List)
 			protected.POST("/transactions", limitChecker.CheckTransactionLimit(), transactionHandler.Create)
-			protected.GET("/transactions/:id", transactionHandler.Get)
+		protected.GET("/transactions/:id", transactionHandler.Get)
+			protected.POST("/transactions/:id/void", transactionHandler.Void)
 
 			// Reports routes
 			reportsHandler := reports.NewHandler(db)

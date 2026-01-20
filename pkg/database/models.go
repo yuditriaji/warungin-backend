@@ -240,6 +240,24 @@ type ActivityLog struct {
 	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
+// TransactionAuditLog tracks transaction changes with detail snapshots
+type TransactionAuditLog struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	TenantID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"tenant_id"`
+	TransactionID uuid.UUID  `gorm:"type:uuid;not null;index" json:"transaction_id"`
+	Transaction   Transaction `gorm:"foreignKey:TransactionID" json:"transaction,omitempty"`
+	Action        string     `gorm:"not null" json:"action"` // void, correction, refund
+	Reason        string     `gorm:"not null" json:"reason"` // Required justification
+	OldValues     string     `gorm:"type:jsonb" json:"old_values"` // Snapshot of old data
+	NewValues     string     `gorm:"type:jsonb" json:"new_values"` // Changes made (if any)
+	UserID        uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
+	User          User       `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	ManagerID     *uuid.UUID `gorm:"type:uuid" json:"manager_id"` // If manager approval was required
+	Manager       *User      `gorm:"foreignKey:ManagerID" json:"manager,omitempty"`
+	IPAddress     string     `json:"ip_address"`
+	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"created_at"`
+}
+
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -259,6 +277,7 @@ func Migrate(db *gorm.DB) error {
 		&Invoice{},
 		&EmployeeInvite{},
 		&ActivityLog{},
+		&TransactionAuditLog{},
 	)
 }
 
