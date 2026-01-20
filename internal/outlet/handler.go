@@ -5,16 +5,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yuditriaji/warungin-backend/pkg/activitylog"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *activitylog.Logger
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	return &Handler{
+		db:     db,
+		logger: activitylog.NewLogger(db),
+	}
 }
 
 type CreateOutletInput struct {
@@ -79,6 +84,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// Log activity
+	h.logger.LogCreate(c, "outlet", outlet.ID, map[string]interface{}{
+		"name":    outlet.Name,
+		"address": outlet.Address,
+		"phone":   outlet.Phone,
+	})
+
 	c.JSON(http.StatusCreated, gin.H{"data": outlet})
 }
 
@@ -109,6 +121,13 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Store old values for logging
+	oldValues := map[string]interface{}{
+		"name":    outlet.Name,
+		"address": outlet.Address,
+		"phone":   outlet.Phone,
+	}
+
 	var input CreateOutletInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -119,6 +138,13 @@ func (h *Handler) Update(c *gin.Context) {
 	outlet.Address = input.Address
 	outlet.Phone = input.Phone
 	h.db.Save(&outlet)
+
+	// Log activity with old and new values
+	h.logger.LogUpdate(c, "outlet", outlet.ID, oldValues, map[string]interface{}{
+		"name":    outlet.Name,
+		"address": outlet.Address,
+		"phone":   outlet.Phone,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"data": outlet})
 }
@@ -136,12 +162,26 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
+	// Get outlet before delete for logging
+	var outlet database.Outlet
+	if err := h.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&outlet).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Outlet not found"})
+		return
+	}
+
 	result := h.db.Where("id = ? AND tenant_id = ?", id, tenantID).
 		Delete(&database.Outlet{})
 	if result.RowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Outlet not found"})
 		return
 	}
+
+	// Log activity
+	h.logger.LogDelete(c, "outlet", outlet.ID, map[string]interface{}{
+		"name":    outlet.Name,
+		"address": outlet.Address,
+		"phone":   outlet.Phone,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Outlet deleted"})
 }

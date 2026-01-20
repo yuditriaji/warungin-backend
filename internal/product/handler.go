@@ -5,16 +5,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yuditriaji/warungin-backend/pkg/activitylog"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *activitylog.Logger
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	return &Handler{
+		db:     db,
+		logger: activitylog.NewLogger(db),
+	}
 }
 
 type CreateProductRequest struct {
@@ -85,6 +90,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// Log activity
+	h.logger.LogCreate(c, "product", product.ID, map[string]interface{}{
+		"name":  product.Name,
+		"price": product.Price,
+		"sku":   product.SKU,
+	})
+
 	c.JSON(http.StatusCreated, gin.H{"data": product})
 }
 
@@ -115,6 +127,15 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Store old values for logging
+	oldValues := map[string]interface{}{
+		"name":     product.Name,
+		"price":    product.Price,
+		"cost":     product.Cost,
+		"sku":      product.SKU,
+		"stock":    product.StockQty,
+	}
+
 	var req CreateProductRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -134,6 +155,15 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Log activity with old and new values
+	h.logger.LogUpdate(c, "product", product.ID, oldValues, map[string]interface{}{
+		"name":     product.Name,
+		"price":    product.Price,
+		"cost":     product.Cost,
+		"sku":      product.SKU,
+		"stock":    product.StockQty,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"data": product})
 }
 
@@ -142,10 +172,24 @@ func (h *Handler) Delete(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	productID := c.Param("id")
 
-	if err := h.db.Where("id = ? AND tenant_id = ?", productID, tenantID).Delete(&database.Product{}).Error; err != nil {
+	// Get product before delete for logging
+	var product database.Product
+	if err := h.db.Where("id = ? AND tenant_id = ?", productID, tenantID).First(&product).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
+		return
+	}
+
+	if err := h.db.Delete(&product).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete product"})
 		return
 	}
+
+	// Log activity
+	h.logger.LogDelete(c, "product", product.ID, map[string]interface{}{
+		"name":  product.Name,
+		"price": product.Price,
+		"sku":   product.SKU,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Product deleted"})
 }
@@ -174,6 +218,9 @@ func (h *Handler) ToggleActive(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update product"})
 		return
 	}
+
+	// Log toggle action
+	h.logger.LogToggle(c, "product", product.ID, product.IsActive, product.Name)
 
 	c.JSON(http.StatusOK, gin.H{"data": product})
 }

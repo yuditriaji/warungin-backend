@@ -5,16 +5,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yuditriaji/warungin-backend/pkg/activitylog"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *activitylog.Logger
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	return &Handler{
+		db:     db,
+		logger: activitylog.NewLogger(db),
+	}
 }
 
 type CreateCustomerRequest struct {
@@ -68,6 +73,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// Log activity
+	h.logger.LogCreate(c, "customer", customer.ID, map[string]interface{}{
+		"name":  customer.Name,
+		"phone": customer.Phone,
+		"email": customer.Email,
+	})
+
 	c.JSON(http.StatusCreated, gin.H{"data": customer})
 }
 
@@ -96,6 +108,14 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Store old values for logging
+	oldValues := map[string]interface{}{
+		"name":    customer.Name,
+		"phone":   customer.Phone,
+		"email":   customer.Email,
+		"address": customer.Address,
+	}
+
 	var req CreateCustomerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -112,6 +132,14 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Log activity with old and new values
+	h.logger.LogUpdate(c, "customer", customer.ID, oldValues, map[string]interface{}{
+		"name":    customer.Name,
+		"phone":   customer.Phone,
+		"email":   customer.Email,
+		"address": customer.Address,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"data": customer})
 }
 
@@ -120,10 +148,24 @@ func (h *Handler) Delete(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	customerID := c.Param("id")
 
-	if err := h.db.Where("id = ? AND tenant_id = ?", customerID, tenantID).Delete(&database.Customer{}).Error; err != nil {
+	// Get customer before delete for logging
+	var customer database.Customer
+	if err := h.db.Where("id = ? AND tenant_id = ?", customerID, tenantID).First(&customer).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Customer not found"})
+		return
+	}
+
+	if err := h.db.Delete(&customer).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete customer"})
 		return
 	}
+
+	// Log activity
+	h.logger.LogDelete(c, "customer", customer.ID, map[string]interface{}{
+		"name":  customer.Name,
+		"phone": customer.Phone,
+		"email": customer.Email,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Customer deleted"})
 }

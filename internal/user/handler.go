@@ -5,17 +5,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/yuditriaji/warungin-backend/pkg/activitylog"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *activitylog.Logger
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	return &Handler{
+		db:     db,
+		logger: activitylog.NewLogger(db),
+	}
 }
 
 type CreateStaffInput struct {
@@ -123,7 +128,11 @@ func (h *Handler) CreateStaff(c *gin.Context) {
 	}
 
 	// Log activity
-	h.logActivity(c, "create_staff", "user", staff.ID, "Created staff "+staff.Name)
+	h.logger.LogCreate(c, "staff", staff.ID, map[string]interface{}{
+		"name":  staff.Name,
+		"email": staff.Email,
+		"role":  staff.Role,
+	})
 
 	c.JSON(http.StatusCreated, gin.H{"data": staff})
 }
@@ -148,6 +157,13 @@ func (h *Handler) UpdateStaff(c *gin.Context) {
 	if staff.Role == "owner" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Cannot edit owner account"})
 		return
+	}
+
+	// Store old values for logging
+	oldValues := map[string]interface{}{
+		"name":      staff.Name,
+		"role":      staff.Role,
+		"is_active": staff.IsActive,
 	}
 
 	var input UpdateStaffInput
@@ -175,7 +191,13 @@ func (h *Handler) UpdateStaff(c *gin.Context) {
 	}
 
 	h.db.Save(&staff)
-	h.logActivity(c, "update_staff", "user", staff.ID, "Updated staff "+staff.Name)
+
+	// Log activity with old and new values
+	h.logger.LogUpdate(c, "staff", staff.ID, oldValues, map[string]interface{}{
+		"name":      staff.Name,
+		"role":      staff.Role,
+		"is_active": staff.IsActive,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"data": staff})
 }
@@ -203,7 +225,13 @@ func (h *Handler) DeleteStaff(c *gin.Context) {
 	}
 
 	h.db.Delete(&staff)
-	h.logActivity(c, "delete_staff", "user", staff.ID, "Deleted staff "+staff.Name)
+
+	// Log activity
+	h.logger.LogDelete(c, "staff", staff.ID, map[string]interface{}{
+		"name":  staff.Name,
+		"email": staff.Email,
+		"role":  staff.Role,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Staff deleted"})
 }
@@ -223,32 +251,6 @@ func (h *Handler) GetActivityLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": logs})
-}
-
-func (h *Handler) logActivity(c *gin.Context, action, entityType string, entityID uuid.UUID, details string) {
-	tenantID := c.GetString("tenant_id")
-	userID := c.GetString("user_id")
-	outletID := c.GetString("outlet_id")
-
-	tenantUUID, _ := uuid.Parse(tenantID)
-	userUUID, _ := uuid.Parse(userID)
-	var outletUUID *uuid.UUID
-	if outletID != "" {
-		val, _ := uuid.Parse(outletID)
-		outletUUID = &val
-	}
-
-	log := database.ActivityLog{
-		TenantID:   tenantUUID,
-		UserID:     userUUID,
-		OutletID:   outletUUID,
-		Action:     action,
-		EntityType: entityType,
-		EntityID:   &entityID,
-		Details:    details,
-		IPAddress:  c.ClientIP(),
-	}
-	h.db.Create(&log)
 }
 
 func getMaxUsers(plan string) int {
