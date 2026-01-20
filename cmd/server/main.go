@@ -95,6 +95,7 @@ func main() {
 			protected.POST("/transactions", limitChecker.CheckTransactionLimit(), transactionHandler.Create)
 		protected.GET("/transactions/:id", transactionHandler.Get)
 			protected.POST("/transactions/:id/void", transactionHandler.Void)
+			protected.GET("/audit-logs", transactionHandler.ListAuditLogs)
 
 			// Reports routes
 			reportsHandler := reports.NewHandler(db)

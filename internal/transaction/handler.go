@@ -314,3 +314,53 @@ func (h *Handler) Void(c *gin.Context) {
 		"data":    transaction,
 	})
 }
+
+// ListAuditLogs returns transaction audit logs (managers/owners only)
+func (h *Handler) ListAuditLogs(c *gin.Context) {
+	tenantIDStr := c.GetString("tenant_id")
+	tenantID, _ := uuid.Parse(tenantIDStr)
+	userIDStr := c.GetString("user_id")
+	userID, _ := uuid.Parse(userIDStr)
+
+	// Check if user is manager or owner
+	var user database.User
+	if err := h.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	if user.Role != "manager" && user.Role != "owner" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya manager dan owner yang dapat melihat audit log"})
+		return
+	}
+
+	// Parse date filters
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	query := h.db.Where("tenant_id = ?", tenantID).
+		Preload("User").
+		Preload("Transaction").
+		Order("created_at DESC")
+
+	if startDate != "" {
+		if parsed, err := time.Parse("2006-01-02", startDate); err == nil {
+			query = query.Where("created_at >= ?", parsed)
+		}
+	}
+	if endDate != "" {
+		if parsed, err := time.Parse("2006-01-02", endDate); err == nil {
+			endOfDay := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 23, 59, 59, 0, parsed.Location())
+			query = query.Where("created_at <= ?", endOfDay)
+		}
+	}
+
+	var logs []database.TransactionAuditLog
+	if err := query.Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil audit log"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": logs})
+}
+
