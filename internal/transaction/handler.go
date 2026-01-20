@@ -63,6 +63,10 @@ func (h *Handler) Create(c *gin.Context) {
 	userIDStr := c.GetString("user_id")
 	userID, _ := uuid.Parse(userIDStr)
 
+	// Get user's outlet_id
+	var user database.User
+	h.db.Where("id = ?", userID).First(&user)
+
 	// Start transaction
 	tx := h.db.Begin()
 
@@ -136,6 +140,7 @@ func (h *Handler) Create(c *gin.Context) {
 
 	transaction := database.Transaction{
 		TenantID:      tenantID,
+		OutletID:      user.OutletID, // Set outlet from user's assigned outlet
 		InvoiceNumber: invoiceNumber,
 		OrderNumber:   orderNumber,
 		UserID:        userID,
