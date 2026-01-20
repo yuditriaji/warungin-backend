@@ -36,12 +36,21 @@ type CreateTransactionRequest struct {
 // List returns all transactions for the tenant
 func (h *Handler) List(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
+	outletID := c.Query("outlet_id")
+
+	query := h.db.Where("tenant_id = ?", tenantID)
+	
+	// Filter by outlet if specified
+	if outletID != "" {
+		query = query.Where("outlet_id = ?", outletID)
+	}
 
 	var transactions []database.Transaction
-	if err := h.db.Where("tenant_id = ?", tenantID).
+	if err := query.
 		Preload("Items").
 		Preload("Items.Product").
 		Preload("Customer").
+		Preload("Outlet").
 		Order("created_at DESC").
 		Find(&transactions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch transactions"})
@@ -338,7 +347,8 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
 
-	query := h.db.Where("tenant_id = ?", tenantID).
+	query := h.db.Model(&database.TransactionAuditLog{}).
+		Where("tenant_id = ?", tenantID).
 		Preload("User").
 		Preload("Transaction").
 		Order("created_at DESC")
