@@ -269,14 +269,19 @@ func (h *Handler) XenditWebhook(c *gin.Context) {
 	// If metadata not available, parse from external_id
 	if tenantID == "" || plan == "" {
 		// External ID format: SUB-{tenant_id_first_8_chars}-{plan}-{timestamp}
-		// We need to look up the full tenant_id from the invoice
-		var invoice database.Invoice
-		if err := h.db.Where("payment_ref = ?", invoiceID).Preload("Subscription").First(&invoice).Error; err == nil {
+		// We need to look up the full tenant_id from the invoice -> subscription
+		var inv database.Invoice
+		if err := h.db.Where("payment_ref = ?", invoiceID).First(&inv).Error; err == nil {
 			// Get tenant_id from subscription
 			var sub database.Subscription
-			if err := h.db.First(&sub, invoice.SubscriptionID).Error; err == nil {
+			if err := h.db.Where("id = ?", inv.SubscriptionID).First(&sub).Error; err == nil {
 				tenantID = sub.TenantID.String()
+				fmt.Printf("Found tenant_id from subscription: %s\n", tenantID)
+			} else {
+				fmt.Printf("Failed to find subscription for invoice: %v\n", err)
 			}
+		} else {
+			fmt.Printf("Failed to find invoice for payment_ref: %v\n", err)
 		}
 		
 		// Parse plan from external_id
