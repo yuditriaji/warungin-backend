@@ -256,10 +256,37 @@ func (h *Handler) XenditWebhook(c *gin.Context) {
 	externalID, _ := notification["external_id"].(string)
 	status, _ := notification["status"].(string)
 
-	// Extract metadata
-	metadata, _ := notification["metadata"].(map[string]interface{})
-	tenantID, _ := metadata["tenant_id"].(string)
-	plan, _ := metadata["plan"].(string)
+	// Parse tenant_id and plan from external_id (format: SUB-{tenant_id_prefix}-{plan}-{timestamp})
+	// Example: SUB-b89beb65-bisnis-1769014518
+	var tenantID, plan string
+	
+	// Try to get from metadata first (may not be available in webhook)
+	if metadata, ok := notification["metadata"].(map[string]interface{}); ok {
+		tenantID, _ = metadata["tenant_id"].(string)
+		plan, _ = metadata["plan"].(string)
+	}
+	
+	// If metadata not available, parse from external_id
+	if tenantID == "" || plan == "" {
+		// External ID format: SUB-{tenant_id_first_8_chars}-{plan}-{timestamp}
+		// We need to look up the full tenant_id from the invoice
+		var invoice database.Invoice
+		if err := h.db.Where("payment_ref = ?", invoiceID).Preload("Subscription").First(&invoice).Error; err == nil {
+			// Get tenant_id from subscription
+			var sub database.Subscription
+			if err := h.db.First(&sub, invoice.SubscriptionID).Error; err == nil {
+				tenantID = sub.TenantID.String()
+			}
+		}
+		
+		// Parse plan from external_id
+		parts := splitExternalID(externalID)
+		if len(parts) >= 3 {
+			plan = parts[2] // SUB-{prefix}-{plan}-{timestamp}
+		}
+	}
+	
+	fmt.Printf("Webhook Processing: status=%s, tenantID=%s, plan=%s\n", status, tenantID, plan)
 
 	// Find invoice
 	var invoice database.Invoice
@@ -278,7 +305,13 @@ func (h *Handler) XenditWebhook(c *gin.Context) {
 
 		// Upgrade subscription
 		if tenantID != "" && plan != "" {
-			h.upgradeSubscription(tenantID, plan)
+			if err := h.upgradeSubscription(tenantID, plan); err != nil {
+				fmt.Printf("Failed to upgrade subscription: %v\n", err)
+			} else {
+				fmt.Printf("Successfully upgraded subscription for tenant %s to plan %s\n", tenantID, plan)
+			}
+		} else {
+			fmt.Printf("Warning: Could not upgrade subscription - missing tenantID or plan\n")
 		}
 		
 	case "EXPIRED":
@@ -442,3 +475,48 @@ func timePtr(t time.Time) *time.Time {
 func generateTransactionID() string {
 	return uuid.New().String()
 }
+
+// splitExternalID splits external_id into parts
+// Format: SUB-{tenant_prefix}-{plan}-{timestamp}
+func splitExternalID(externalID string) []string {
+	// Split by "-" but handle the case where there might be dashes in tenant ID
+	// Example: SUB-b89beb65-bisnis-1769014518
+	parts := make([]string, 0)
+	if len(externalID) < 4 || externalID[:4] != "SUB-" {
+		return parts
+	}
+	
+	remaining := externalID[4:] // Remove "SUB-"
+	parts = append(parts, "SUB")
+	
+	// Find the plan part (known values: gratis, pemula, bisnis, enterprise)
+	knownPlans := []string{"enterprise", "bisnis", "pemula", "gratis"}
+	for _, plan := range knownPlans {
+		if idx := findPlanIndex(remaining, plan); idx != -1 {
+			parts = append(parts, remaining[:idx-1]) // tenant prefix
+			parts = append(parts, plan)
+			if idx+len(plan) < len(remaining) {
+				parts = append(parts, remaining[idx+len(plan)+1:]) // timestamp
+			}
+			return parts
+		}
+	}
+	
+	return parts
+}
+
+// findPlanIndex finds the index of plan in the string
+func findPlanIndex(s, plan string) int {
+	for i := 0; i <= len(s)-len(plan); i++ {
+		if s[i:i+len(plan)] == plan {
+			// Check if it's bounded by dashes
+			beforeOK := i == 0 || s[i-1] == '-'
+			afterOK := i+len(plan) == len(s) || s[i+len(plan)] == '-'
+			if beforeOK && afterOK {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
