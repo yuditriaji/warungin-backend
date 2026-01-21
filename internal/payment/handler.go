@@ -411,6 +411,15 @@ func (h *Handler) Webhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "OK"})
 }
 
+// WebhookVerify handles GET requests for webhook URL verification
+func (h *Handler) WebhookVerify(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "OK",
+		"message": "Webhook endpoint is active",
+		"service": "warungin",
+	})
+}
+
 // Helper functions
 func getPlanDisplayName(plan string) string {
 	names := map[string]string{

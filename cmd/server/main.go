@@ -179,7 +179,9 @@ func main() {
 		// Webhooks (public, no auth)
 		paymentHandler := payment.NewHandler(db)
 		v1.POST("/webhook/xendit", paymentHandler.XenditWebhook)
+		v1.GET("/webhook/xendit", paymentHandler.WebhookVerify)  // For URL verification
 		v1.POST("/webhook/midtrans", paymentHandler.Webhook) // Legacy support
+		v1.GET("/webhook/midtrans", paymentHandler.WebhookVerify)
 	}
 
 	// Start server
