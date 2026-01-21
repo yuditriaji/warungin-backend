@@ -101,12 +101,17 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 	// Create external ID for tracking
 	externalID := fmt.Sprintf("SUB-%s-%s-%d", tenantID[:8], req.Plan, time.Now().Unix())
 
+	// Calculate PPN 11%
+	ppnRate := 0.11
+	ppnAmount := price * ppnRate
+	totalAmount := price + ppnAmount
+
 	// Build Xendit invoice request
 	xenditReq := map[string]interface{}{
 		"external_id":      externalID,
-		"amount":           price,
+		"amount":           totalAmount,
 		"payer_email":      req.Email,
-		"description":      fmt.Sprintf("Warungin %s - Berlangganan Bulanan", getPlanDisplayName(req.Plan)),
+		"description":      fmt.Sprintf("Warungin %s - Berlangganan Bulanan (termasuk PPN 11%%)", getPlanDisplayName(req.Plan)),
 		"currency":         "IDR",
 		"invoice_duration": 86400, // 24 hours
 		"success_redirect_url": os.Getenv("FRONTEND_URL") + "/settings?payment=success",
@@ -123,7 +128,12 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 				"category": "Subscription",
 			},
 		},
-		"fees": []map[string]interface{}{},
+		"fees": []map[string]interface{}{
+			{
+				"type":  "PPN 11%",
+				"value": ppnAmount,
+			},
+		},
 		"metadata": map[string]interface{}{
 			"tenant_id": tenantID,
 			"plan":      req.Plan,
@@ -172,7 +182,7 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 	invoice := database.Invoice{
 		SubscriptionID: subscription.ID,
 		InvoiceNumber:  invoiceNumber,
-		Amount:         price,
+		Amount:         totalAmount, // Total including PPN
 		Status:         "pending",
 		DueDate:        expiresAt,
 		PaymentRef:     invoiceID,
@@ -184,10 +194,10 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 			InvoiceID:   invoiceID,
 			InvoiceURL:  invoiceURL,
 			ExternalID:  externalID,
-			Amount:      price,
+			Amount:      totalAmount, // Total including PPN
 			Status:      status,
 			ExpiresAt:   expiresAt,
-			Description: fmt.Sprintf("Warungin %s - Bulanan", getPlanDisplayName(req.Plan)),
+			Description: fmt.Sprintf("Warungin %s - Bulanan (termasuk PPN 11%%)", getPlanDisplayName(req.Plan)),
 		},
 	})
 
