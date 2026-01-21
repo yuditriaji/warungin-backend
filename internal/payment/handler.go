@@ -111,7 +111,7 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 		"external_id":      externalID,
 		"amount":           totalAmount,
 		"payer_email":      req.Email,
-		"description":      fmt.Sprintf("Warungin %s - Berlangganan Bulanan (termasuk PPN 11%%)", getPlanDisplayName(req.Plan)),
+		"description":      fmt.Sprintf("Warungin %s - Berlangganan Bulanan", getPlanDisplayName(req.Plan)),
 		"currency":         "IDR",
 		"invoice_duration": 86400, // 24 hours
 		"success_redirect_url": os.Getenv("FRONTEND_URL") + "/settings?payment=success",
@@ -197,7 +197,7 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 			Amount:      totalAmount, // Total including PPN
 			Status:      status,
 			ExpiresAt:   expiresAt,
-			Description: fmt.Sprintf("Warungin %s - Bulanan (termasuk PPN 11%%)", getPlanDisplayName(req.Plan)),
+			Description: fmt.Sprintf("Warungin %s - Bulanan", getPlanDisplayName(req.Plan)),
 		},
 	})
 
