@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"math"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,14 +19,15 @@ func NewHandler(db *gorm.DB) *Handler {
 }
 
 type InventoryItem struct {
-	ProductID   uuid.UUID `json:"product_id"`
-	ProductName string    `json:"product_name"`
-	SKU         string    `json:"sku"`
-	StockQty    int       `json:"stock_qty"`
-	Price       float64   `json:"price"`
-	Cost        float64   `json:"cost"`
-	StockValue  float64   `json:"stock_value"`
-	Status      string    `json:"status"` // ok, low, out
+	ProductID        uuid.UUID `json:"product_id"`
+	ProductName      string    `json:"product_name"`
+	SKU              string    `json:"sku"`
+	StockQty         int       `json:"stock_qty"`
+	UseMaterialStock bool      `json:"use_material_stock"`
+	Price            float64   `json:"price"`
+	Cost             float64   `json:"cost"`
+	StockValue       float64   `json:"stock_value"`
+	Status           string    `json:"status"` // ok, low, out
 }
 
 type InventorySummary struct {
@@ -41,40 +43,76 @@ func (h *Handler) GetInventory(c *gin.Context) {
 	filter := c.Query("filter") // all, low, out
 
 	var products []database.Product
-	query := h.db.Where("tenant_id = ? AND is_active = ?", tenantID, true)
-	
-	switch filter {
-	case "low":
-		query = query.Where("stock_qty > 0 AND stock_qty < 10")
-	case "out":
-		query = query.Where("stock_qty <= 0")
-	}
-	
-	query.Order("stock_qty ASC").Find(&products)
+	h.db.Where("tenant_id = ? AND is_active = ?", tenantID, true).
+		Order("name ASC").
+		Find(&products)
 
 	var items []InventoryItem
 	for _, p := range products {
+		stockQty := p.StockQty
+
+		// Calculate stock from materials if UseMaterialStock is true
+		if p.UseMaterialStock {
+			stockQty = h.calculateMaterialStock(p.ID)
+		}
+
 		status := "ok"
-		if p.StockQty <= 0 {
+		if stockQty <= 0 {
 			status = "out"
-		} else if p.StockQty < 10 {
+		} else if stockQty < 10 {
 			status = "low"
 		}
-		
+
+		// Apply filter
+		if filter == "low" && status != "low" {
+			continue
+		}
+		if filter == "out" && status != "out" {
+			continue
+		}
+
 		items = append(items, InventoryItem{
-			ProductID:   p.ID,
-			ProductName: p.Name,
-			SKU:         p.SKU,
-			StockQty:    p.StockQty,
-			Price:       p.Price,
-			Cost:        p.Cost,
-			StockValue:  float64(p.StockQty) * p.Cost,
-			Status:      status,
+			ProductID:        p.ID,
+			ProductName:      p.Name,
+			SKU:              p.SKU,
+			StockQty:         stockQty,
+			UseMaterialStock: p.UseMaterialStock,
+			Price:            p.Price,
+			Cost:             p.Cost,
+			StockValue:       float64(stockQty) * p.Cost,
+			Status:           status,
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": items})
 }
+
+// calculateMaterialStock returns the max units that can be made from available materials
+func (h *Handler) calculateMaterialStock(productID uuid.UUID) int {
+	var productMaterials []database.ProductMaterial
+	h.db.Where("product_id = ?", productID).Preload("Material").Find(&productMaterials)
+
+	if len(productMaterials) == 0 {
+		return 0
+	}
+
+	availableStock := math.MaxFloat64
+	for _, pm := range productMaterials {
+		if pm.QuantityUsed <= 0 {
+			continue
+		}
+		canMake := pm.Material.StockQty / pm.QuantityUsed
+		if canMake < availableStock {
+			availableStock = canMake
+		}
+	}
+
+	if availableStock == math.MaxFloat64 {
+		return 0
+	}
+	return int(math.Floor(availableStock))
+}
+
 
 // GetSummary returns inventory summary stats
 func (h *Handler) GetSummary(c *gin.Context) {
