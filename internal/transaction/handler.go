@@ -123,12 +123,17 @@ func (h *Handler) Create(c *gin.Context) {
 		if product.UseMaterialStock {
 			// Check if all materials have enough stock
 			for _, pm := range productMaterials {
-				required := pm.QuantityUsed * float64(item.Quantity)
+				// Apply conversion rate (recipe_qty × conversion = actual material usage)
+				convRate := pm.ConversionRate
+				if convRate <= 0 {
+					convRate = 1
+				}
+				required := pm.QuantityUsed * convRate * float64(item.Quantity)
 				if pm.Material.StockQty < required {
 					tx.Rollback()
 					c.JSON(http.StatusBadRequest, gin.H{
-						"error": fmt.Sprintf("Insufficient material: %s (need %.2f, have %.2f)", 
-							pm.Material.Name, required, pm.Material.StockQty),
+						"error": fmt.Sprintf("Insufficient material: %s (need %.2f %s, have %.2f %s)", 
+							pm.Material.Name, required, pm.Material.Unit, pm.Material.StockQty, pm.Material.Unit),
 					})
 					return
 				}
@@ -144,7 +149,12 @@ func (h *Handler) Create(c *gin.Context) {
 
 		// Always deduct raw materials if linked
 		for _, pm := range productMaterials {
-			deduction := pm.QuantityUsed * float64(item.Quantity)
+			// Apply conversion rate for deduction
+			convRate := pm.ConversionRate
+			if convRate <= 0 {
+				convRate = 1
+			}
+			deduction := pm.QuantityUsed * convRate * float64(item.Quantity)
 			tx.Model(&database.RawMaterial{}).
 				Where("id = ?", pm.MaterialID).
 				Update("stock_qty", gorm.Expr("stock_qty - ?", deduction))
@@ -317,7 +327,12 @@ func (h *Handler) Void(c *gin.Context) {
 		var productMaterials []database.ProductMaterial
 		h.db.Where("product_id = ?", item.ProductID).Find(&productMaterials)
 		for _, pm := range productMaterials {
-			restoration := pm.QuantityUsed * float64(item.Quantity)
+			// Apply conversion rate for restoration
+			convRate := pm.ConversionRate
+			if convRate <= 0 {
+				convRate = 1
+			}
+			restoration := pm.QuantityUsed * convRate * float64(item.Quantity)
 			tx.Model(&database.RawMaterial{}).
 				Where("id = ?", pm.MaterialID).
 				Update("stock_qty", gorm.Expr("stock_qty + ?", restoration))
