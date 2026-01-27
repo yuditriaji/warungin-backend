@@ -162,3 +162,52 @@ func (h *Handler) UploadQRIS(c *gin.Context) {
 		"message": "QRIS image uploaded successfully",
 	})
 }
+
+// UpdateProfileRequest represents the profile update request body
+type UpdateProfileRequest struct {
+	Name         *string `json:"name"`
+	BusinessType *string `json:"business_type"`
+	Phone        *string `json:"phone"`
+	Address      *string `json:"address"`
+}
+
+// UpdateProfile updates the tenant's profile (name, business_type, phone, address)
+func (h *Handler) UpdateProfile(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+
+	var req UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", tenantID).First(&tenant).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+		return
+	}
+
+	// Update fields if provided
+	if req.Name != nil && *req.Name != "" {
+		tenant.Name = *req.Name
+	}
+	if req.BusinessType != nil {
+		tenant.BusinessType = *req.BusinessType
+	}
+	if req.Phone != nil {
+		tenant.Phone = *req.Phone
+	}
+	if req.Address != nil {
+		tenant.Address = *req.Address
+	}
+
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":    tenant,
+		"message": "Profile updated successfully",
+	})
+}
