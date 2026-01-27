@@ -35,6 +35,12 @@ type CreateProductRequest struct {
 	UseMaterialStock bool       `json:"use_material_stock"`
 }
 
+// ProductResponse includes calculated fields for material-driven products
+type ProductResponse struct {
+	database.Product
+	CalculatedStock int `json:"calculated_stock,omitempty"`
+}
+
 // List returns all products for the tenant, optionally filtered by outlet
 func (h *Handler) List(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
@@ -53,7 +59,21 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": products})
+	// Build response with calculated stock for material-driven products
+	var response []ProductResponse
+	for _, p := range products {
+		pr := ProductResponse{Product: p}
+		
+		if p.UseMaterialStock {
+			pr.CalculatedStock = h.calculateMaterialStock(p.ID)
+			// Override stock_qty with calculated for frontend compatibility
+			pr.Product.StockQty = pr.CalculatedStock
+		}
+		
+		response = append(response, pr)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": response})
 }
 
 // Create adds a new product
@@ -313,4 +333,35 @@ func (h *Handler) GetAvailableStock(c *gin.Context) {
 			"materials":          materialDetails,
 		},
 	})
+}
+
+// calculateMaterialStock returns the max units that can be made from available materials
+func (h *Handler) calculateMaterialStock(productID uuid.UUID) int {
+	var productMaterials []database.ProductMaterial
+	h.db.Where("product_id = ?", productID).Preload("Material").Find(&productMaterials)
+
+	if len(productMaterials) == 0 {
+		return 0
+	}
+
+	availableStock := math.MaxFloat64
+	for _, pm := range productMaterials {
+		if pm.QuantityUsed <= 0 {
+			continue
+		}
+		convRate := pm.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		actualUsage := pm.QuantityUsed * convRate
+		canMake := pm.Material.StockQty / actualUsage
+		if canMake < availableStock {
+			availableStock = canMake
+		}
+	}
+
+	if availableStock == math.MaxFloat64 {
+		return 0
+	}
+	return int(math.Floor(availableStock))
 }

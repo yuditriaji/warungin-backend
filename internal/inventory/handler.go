@@ -71,6 +71,12 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			continue
 		}
 
+		// Calculate cost for material-driven products
+		cost := p.Cost
+		if p.UseMaterialStock && cost <= 0 {
+			cost = h.calculateMaterialCost(p.ID)
+		}
+
 		items = append(items, InventoryItem{
 			ProductID:        p.ID,
 			ProductName:      p.Name,
@@ -78,8 +84,8 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			StockQty:         stockQty,
 			UseMaterialStock: p.UseMaterialStock,
 			Price:            p.Price,
-			Cost:             p.Cost,
-			StockValue:       float64(stockQty) * p.Cost,
+			Cost:             cost,
+			StockValue:       float64(stockQty) * cost,
 			Status:           status,
 		})
 	}
@@ -121,6 +127,22 @@ func (h *Handler) calculateMaterialStock(productID uuid.UUID) int {
 	return int(math.Floor(availableStock))
 }
 
+// calculateMaterialCost returns the total cost of materials for one product unit
+func (h *Handler) calculateMaterialCost(productID uuid.UUID) float64 {
+	var productMaterials []database.ProductMaterial
+	h.db.Where("product_id = ?", productID).Preload("Material").Find(&productMaterials)
+
+	var totalCost float64
+	for _, pm := range productMaterials {
+		convRate := pm.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		// Cost = quantity × conversion × unit_price
+		totalCost += pm.QuantityUsed * convRate * pm.Material.UnitPrice
+	}
+	return totalCost
+}
 
 // GetSummary returns inventory summary stats
 func (h *Handler) GetSummary(c *gin.Context) {
