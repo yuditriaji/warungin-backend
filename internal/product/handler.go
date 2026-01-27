@@ -280,16 +280,23 @@ func (h *Handler) GetAvailableStock(c *gin.Context) {
 		if pm.QuantityUsed <= 0 {
 			continue
 		}
-		canMake := pm.Material.StockQty / pm.QuantityUsed
+		// Account for conversion rate (recipe_qty × conversion = actual material usage)
+		convRate := pm.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		actualUsage := pm.QuantityUsed * convRate
+		canMake := pm.Material.StockQty / actualUsage
 		if canMake < availableStock {
 			availableStock = canMake
 		}
 		materialDetails = append(materialDetails, gin.H{
-			"material_id":   pm.MaterialID,
-			"material_name": pm.Material.Name,
-			"stock_qty":     pm.Material.StockQty,
-			"quantity_used": pm.QuantityUsed,
-			"can_make":      int(math.Floor(canMake)),
+			"material_id":     pm.MaterialID,
+			"material_name":   pm.Material.Name,
+			"stock_qty":       pm.Material.StockQty,
+			"quantity_used":   pm.QuantityUsed,
+			"conversion_rate": convRate,
+			"can_make":        int(math.Floor(canMake)),
 		})
 	}
 

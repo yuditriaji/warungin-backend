@@ -101,7 +101,15 @@ func (h *Handler) calculateMaterialStock(productID uuid.UUID) int {
 		if pm.QuantityUsed <= 0 {
 			continue
 		}
-		canMake := pm.Material.StockQty / pm.QuantityUsed
+		
+		// Account for conversion rate (recipe_qty × conversion = actual material usage)
+		convRate := pm.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		actualUsage := pm.QuantityUsed * convRate
+		
+		canMake := pm.Material.StockQty / actualUsage
 		if canMake < availableStock {
 			availableStock = canMake
 		}
