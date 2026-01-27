@@ -88,6 +88,7 @@ func main() {
 			protected.PUT("/products/:id", productHandler.Update)
 			protected.DELETE("/products/:id", productHandler.Delete)
 			protected.PATCH("/products/:id/toggle", productHandler.ToggleActive)
+			protected.GET("/products/:id/available-stock", productHandler.GetAvailableStock)
 
 			// Transaction routes (with limit check)
 			transactionHandler := transaction.NewHandler(db)

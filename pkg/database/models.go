@@ -101,21 +101,22 @@ type Category struct {
 // Product represents a sellable item
 type Product struct {
 	BaseModel
-	TenantID   uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
-	Tenant     Tenant     `gorm:"foreignKey:TenantID" json:"-"`
-	OutletID   *uuid.UUID `gorm:"type:uuid" json:"outlet_id"`
-	Outlet     *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
-	CategoryID *uuid.UUID `gorm:"type:uuid" json:"category_id"`
-	Category   *Category  `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
-	Name       string     `gorm:"not null" json:"name"`
-	SKU        string     `json:"sku"`
-	Price      float64    `gorm:"not null" json:"price"`
-	Cost       float64    `json:"cost"`
-	TaxRate    float64    `gorm:"default:0" json:"tax_rate"` // Tax percentage (e.g., 10 for 10%)
-	StockQty   int        `gorm:"default:0" json:"stock_qty"`
-	ImageURL   string     `json:"image_url"`
-	IsActive   bool       `gorm:"default:true" json:"is_active"`
-	Modifiers  []ProductModifier `gorm:"foreignKey:ProductID" json:"modifiers,omitempty"`
+	TenantID         uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant           Tenant     `gorm:"foreignKey:TenantID" json:"-"`
+	OutletID         *uuid.UUID `gorm:"type:uuid" json:"outlet_id"`
+	Outlet           *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
+	CategoryID       *uuid.UUID `gorm:"type:uuid" json:"category_id"`
+	Category         *Category  `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+	Name             string     `gorm:"not null" json:"name"`
+	SKU              string     `json:"sku"`
+	Price            float64    `gorm:"not null" json:"price"`
+	Cost             float64    `json:"cost"`
+	TaxRate          float64    `gorm:"default:0" json:"tax_rate"` // Tax percentage (e.g., 10 for 10%)
+	StockQty         int        `gorm:"default:0" json:"stock_qty"`
+	UseMaterialStock bool       `gorm:"default:false" json:"use_material_stock"` // When true, stock is calculated from linked materials
+	ImageURL         string     `json:"image_url"`
+	IsActive         bool       `gorm:"default:true" json:"is_active"`
+	Modifiers        []ProductModifier `gorm:"foreignKey:ProductID" json:"modifiers,omitempty"`
 }
 
 // ProductModifier represents add-ons/variations (e.g., sizes, toppings)

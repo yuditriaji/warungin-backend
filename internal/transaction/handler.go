@@ -115,16 +115,34 @@ func (h *Handler) Create(c *gin.Context) {
 		})
 		subtotal += itemSubtotal
 
-		// Reduce stock
-		if err := tx.Model(&product).Update("stock_qty", gorm.Expr("stock_qty - ?", item.Quantity)).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
-			return
+		// Get linked materials for this product
+		var productMaterials []database.ProductMaterial
+		tx.Where("product_id = ?", item.ProductID).Preload("Material").Find(&productMaterials)
+
+		// If using material stock, validate materials are available and skip product stock deduction
+		if product.UseMaterialStock {
+			// Check if all materials have enough stock
+			for _, pm := range productMaterials {
+				required := pm.QuantityUsed * float64(item.Quantity)
+				if pm.Material.StockQty < required {
+					tx.Rollback()
+					c.JSON(http.StatusBadRequest, gin.H{
+						"error": fmt.Sprintf("Insufficient material: %s (need %.2f, have %.2f)", 
+							pm.Material.Name, required, pm.Material.StockQty),
+					})
+					return
+				}
+			}
+		} else {
+			// Reduce product stock only if NOT using material stock
+			if err := tx.Model(&product).Update("stock_qty", gorm.Expr("stock_qty - ?", item.Quantity)).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update stock"})
+				return
+			}
 		}
 
-		// Auto-deduct raw materials linked to this product
-		var productMaterials []database.ProductMaterial
-		tx.Where("product_id = ?", item.ProductID).Find(&productMaterials)
+		// Always deduct raw materials if linked
 		for _, pm := range productMaterials {
 			deduction := pm.QuantityUsed * float64(item.Quantity)
 			tx.Model(&database.RawMaterial{}).
@@ -280,15 +298,22 @@ func (h *Handler) Void(c *gin.Context) {
 
 	// Restore stock for each item
 	for _, item := range transaction.Items {
-		if err := tx.Model(&database.Product{}).
-			Where("id = ?", item.ProductID).
-			Update("stock_qty", gorm.Expr("stock_qty + ?", item.Quantity)).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengembalikan stok"})
-			return
+		// Get product to check UseMaterialStock flag
+		var product database.Product
+		h.db.Where("id = ?", item.ProductID).First(&product)
+
+		// Only restore product stock if NOT using material stock
+		if !product.UseMaterialStock {
+			if err := tx.Model(&database.Product{}).
+				Where("id = ?", item.ProductID).
+				Update("stock_qty", gorm.Expr("stock_qty + ?", item.Quantity)).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengembalikan stok"})
+				return
+			}
 		}
 
-		// Restore raw materials
+		// Always restore raw materials
 		var productMaterials []database.ProductMaterial
 		h.db.Where("product_id = ?", item.ProductID).Find(&productMaterials)
 		for _, pm := range productMaterials {
