@@ -14,6 +14,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/outlet"
 	"github.com/yuditriaji/warungin-backend/internal/payment"
 	"github.com/yuditriaji/warungin-backend/internal/product"
+	"github.com/yuditriaji/warungin-backend/internal/region"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
 	"github.com/yuditriaji/warungin-backend/internal/subscription"
 	"github.com/yuditriaji/warungin-backend/internal/tenant"
@@ -63,6 +64,12 @@ func main() {
 		// Google OAuth routes
 		v1.GET("/auth/google", authHandler.GoogleLogin)
 		v1.GET("/auth/google/callback", authHandler.GoogleCallback)
+
+		// Region routes (public - for address selection)
+		regionHandler := region.NewHandler()
+		v1.GET("/regions/provinces", regionHandler.GetProvinces)
+		v1.GET("/regions/provinces/:province_id/cities", regionHandler.GetCities)
+		v1.GET("/regions/cities/:city_id/districts", regionHandler.GetDistricts)
 
 		// Protected routes
 		protected := v1.Group("")

@@ -23,9 +23,14 @@ func NewHandler(db *gorm.DB) *Handler {
 }
 
 type CreateOutletInput struct {
-	Name    string `json:"name" binding:"required"`
-	Address string `json:"address"`
-	Phone   string `json:"phone"`
+	Name         string `json:"name" binding:"required"`
+	Address      string `json:"address"`
+	ProvinceID   string `json:"province_id"`
+	ProvinceName string `json:"province_name"`
+	CityID       string `json:"city_id"`
+	CityName     string `json:"city_name"`
+	PostalCode   string `json:"postal_code"`
+	Phone        string `json:"phone"`
 }
 
 // List returns all outlets for tenant
@@ -72,11 +77,16 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	outlet := database.Outlet{
-		TenantID: tenantUUID,
-		Name:     input.Name,
-		Address:  input.Address,
-		Phone:    input.Phone,
-		IsActive: true,
+		TenantID:     tenantUUID,
+		Name:         input.Name,
+		Address:      input.Address,
+		ProvinceID:   input.ProvinceID,
+		ProvinceName: input.ProvinceName,
+		CityID:       input.CityID,
+		CityName:     input.CityName,
+		PostalCode:   input.PostalCode,
+		Phone:        input.Phone,
+		IsActive:     true,
 	}
 
 	if err := h.db.Create(&outlet).Error; err != nil {
@@ -136,6 +146,11 @@ func (h *Handler) Update(c *gin.Context) {
 
 	outlet.Name = input.Name
 	outlet.Address = input.Address
+	outlet.ProvinceID = input.ProvinceID
+	outlet.ProvinceName = input.ProvinceName
+	outlet.CityID = input.CityID
+	outlet.CityName = input.CityName
+	outlet.PostalCode = input.PostalCode
 	outlet.Phone = input.Phone
 	h.db.Save(&outlet)
 

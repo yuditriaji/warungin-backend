@@ -169,6 +169,11 @@ type UpdateProfileRequest struct {
 	BusinessType *string `json:"business_type"`
 	Phone        *string `json:"phone"`
 	Address      *string `json:"address"`
+	ProvinceID   *string `json:"province_id"`
+	ProvinceName *string `json:"province_name"`
+	CityID       *string `json:"city_id"`
+	CityName     *string `json:"city_name"`
+	PostalCode   *string `json:"postal_code"`
 }
 
 // UpdateProfile updates the tenant's profile (name, business_type, phone, address)
@@ -199,6 +204,21 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	}
 	if req.Address != nil {
 		tenant.Address = *req.Address
+	}
+	if req.ProvinceID != nil {
+		tenant.ProvinceID = *req.ProvinceID
+	}
+	if req.ProvinceName != nil {
+		tenant.ProvinceName = *req.ProvinceName
+	}
+	if req.CityID != nil {
+		tenant.CityID = *req.CityID
+	}
+	if req.CityName != nil {
+		tenant.CityName = *req.CityName
+	}
+	if req.PostalCode != nil {
+		tenant.PostalCode = *req.PostalCode
 	}
 
 	if err := h.db.Save(&tenant).Error; err != nil {

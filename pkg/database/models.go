@@ -29,7 +29,12 @@ type Tenant struct {
 	BusinessType string        `json:"business_type"`
 	Phone        string        `json:"phone"`
 	Email        string        `gorm:"uniqueIndex" json:"email"`
-	Address      string        `json:"address"`
+	Address      string        `json:"address"`         // Legacy/full address text
+	ProvinceID   string        `json:"province_id"`     // External API ID
+	ProvinceName string        `json:"province_name"`
+	CityID       string        `json:"city_id"`         // External API ID
+	CityName     string        `json:"city_name"`
+	PostalCode   string        `json:"postal_code"`
 	Settings     string        `gorm:"type:jsonb;default:'{}'" json:"settings"`
 	Subscription *Subscription `gorm:"foreignKey:TenantID" json:"subscription,omitempty"`
 	Outlets      []Outlet      `gorm:"foreignKey:TenantID" json:"outlets,omitempty"`
@@ -67,12 +72,17 @@ type UsageMetrics struct {
 // Outlet represents a store location
 type Outlet struct {
 	BaseModel
-	TenantID uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
-	Tenant   Tenant    `gorm:"foreignKey:TenantID" json:"-"`
-	Name     string    `gorm:"not null" json:"name"`
-	Address  string    `json:"address"`
-	Phone    string    `json:"phone"`
-	IsActive bool      `gorm:"default:true" json:"is_active"`
+	TenantID     uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant       Tenant    `gorm:"foreignKey:TenantID" json:"-"`
+	Name         string    `gorm:"not null" json:"name"`
+	Address      string    `json:"address"`         // Street address detail
+	ProvinceID   string    `json:"province_id"`
+	ProvinceName string    `json:"province_name"`
+	CityID       string    `json:"city_id"`
+	CityName     string    `json:"city_name"`
+	PostalCode   string    `json:"postal_code"`
+	Phone        string    `json:"phone"`
+	IsActive     bool      `gorm:"default:true" json:"is_active"`
 }
 
 // User represents a system user
