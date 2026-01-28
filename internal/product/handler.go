@@ -41,16 +41,16 @@ type ProductResponse struct {
 	CalculatedStock int `json:"calculated_stock,omitempty"`
 }
 
-// List returns all products for the tenant, optionally filtered by outlet
+// List returns all products for the tenant, filtered by outlet
 func (h *Handler) List(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	outletID := c.Query("outlet_id")
 
 	query := h.db.Where("tenant_id = ?", tenantID)
 	
-	// Filter by outlet_id if provided - include shared products (outlet_id IS NULL) too
+	// Filter by outlet_id if provided
 	if outletID != "" {
-		query = query.Where("outlet_id = ? OR outlet_id IS NULL", outletID)
+		query = query.Where("outlet_id = ?", outletID)
 	}
 
 	var products []database.Product

@@ -390,6 +390,27 @@ func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
 		return fmt.Errorf("invalid plan: %s", plan)
 	}
 
+	// Get the first outlet for this tenant to migrate orphaned data
+	var firstOutlet database.Outlet
+	if err := h.db.Where("tenant_id = ?", tenantID).Order("created_at ASC").First(&firstOutlet).Error; err == nil {
+		// Migrate products with NULL outlet_id to first outlet
+		h.db.Model(&database.Product{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+
+		// Migrate materials with NULL outlet_id to first outlet
+		h.db.Model(&database.RawMaterial{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+
+		// Migrate users with NULL outlet_id to first outlet
+		h.db.Model(&database.User{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+
+		fmt.Printf("Migrated orphaned products/materials/users to outlet %s for tenant %s\n", firstOutlet.ID, tenantID)
+	}
+
 	subscription.Plan = plan
 	subscription.Status = "active"
 	subscription.MaxUsers = limits.MaxUsers
