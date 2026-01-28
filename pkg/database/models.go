@@ -75,7 +75,8 @@ type Outlet struct {
 	TenantID     uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
 	Tenant       Tenant    `gorm:"foreignKey:TenantID" json:"-"`
 	Name         string    `gorm:"not null" json:"name"`
-	Address      string    `json:"address"`         // Street address detail
+	BusinessType string    `json:"business_type"` // fnb, retail, barbershop, etc.
+	Address      string    `json:"address"`       // Street address detail
 	ProvinceID   string    `json:"province_id"`
 	ProvinceName string    `json:"province_name"`
 	CityID       string    `json:"city_id"`

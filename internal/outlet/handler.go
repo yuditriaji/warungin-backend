@@ -24,6 +24,7 @@ func NewHandler(db *gorm.DB) *Handler {
 
 type CreateOutletInput struct {
 	Name         string `json:"name" binding:"required"`
+	BusinessType string `json:"business_type"`
 	Address      string `json:"address"`
 	ProvinceID   string `json:"province_id"`
 	ProvinceName string `json:"province_name"`
@@ -79,6 +80,7 @@ func (h *Handler) Create(c *gin.Context) {
 	outlet := database.Outlet{
 		TenantID:     tenantUUID,
 		Name:         input.Name,
+		BusinessType: input.BusinessType,
 		Address:      input.Address,
 		ProvinceID:   input.ProvinceID,
 		ProvinceName: input.ProvinceName,
@@ -145,6 +147,7 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	outlet.Name = input.Name
+	outlet.BusinessType = input.BusinessType
 	outlet.Address = input.Address
 	outlet.ProvinceID = input.ProvinceID
 	outlet.ProvinceName = input.ProvinceName

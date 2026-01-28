@@ -48,9 +48,9 @@ func (h *Handler) List(c *gin.Context) {
 
 	query := h.db.Where("tenant_id = ?", tenantID)
 	
-	// Filter by outlet_id if provided
+	// Filter by outlet_id if provided - include shared products (outlet_id IS NULL) too
 	if outletID != "" {
-		query = query.Where("outlet_id = ?", outletID)
+		query = query.Where("outlet_id = ? OR outlet_id IS NULL", outletID)
 	}
 
 	var products []database.Product

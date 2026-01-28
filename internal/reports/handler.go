@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"gorm.io/gorm"
 )
@@ -94,25 +95,23 @@ func (h *Handler) GetSalesReport(c *gin.Context) {
 		report.AveragePerTx = report.TotalSales / float64(report.TotalTransactions)
 	}
 
-	// Get items sold and cost
-	var itemStats struct {
-		ItemsSold int64
-		TotalCost float64
-	}
+	// Get items sold count
+	var itemCount int64
 	itemsQuery := h.db.Model(&database.TransactionItem{}).
-		Select("COALESCE(SUM(transaction_items.quantity), 0) as items_sold, COALESCE(SUM(products.cost * transaction_items.quantity), 0) as total_cost").
+		Select("COALESCE(SUM(transaction_items.quantity), 0)").
 		Joins("JOIN transactions ON transaction_items.transaction_id = transactions.id").
-		Joins("JOIN products ON transaction_items.product_id = products.id").
 		Where("transactions.tenant_id = ? AND transactions.created_at >= ? AND transactions.created_at <= ? AND transactions.status = ?",
 			tenantID, startDate, endDate, "completed")
 	
 	if req.OutletID != "" {
 		itemsQuery = itemsQuery.Where("transactions.outlet_id = ?", req.OutletID)
 	}
-	itemsQuery.Scan(&itemStats)
-	
-	report.TotalItemsSold = int(itemStats.ItemsSold)
-	report.TotalCost = itemStats.TotalCost
+	itemsQuery.Scan(&itemCount)
+	report.TotalItemsSold = int(itemCount)
+
+	// Calculate total cost by iterating through transaction items
+	// This properly handles material-driven products
+	report.TotalCost = h.calculateTotalCOGS(tenantID, startDate, endDate, req.OutletID)
 	report.GrossProfit = report.TotalSales - report.TotalCost
 
 	// Get daily breakdown
@@ -137,6 +136,63 @@ func (h *Handler) GetSalesReport(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": report})
+}
+
+// calculateTotalCOGS calculates total cost of goods sold, including material costs for material-driven products
+func (h *Handler) calculateTotalCOGS(tenantID string, startDate, endDate time.Time, outletID string) float64 {
+	// Get all transaction items in the period
+	type ItemWithProduct struct {
+		ProductID        uuid.UUID
+		Quantity         int
+		Cost             float64
+		UseMaterialStock bool
+	}
+	
+	var items []ItemWithProduct
+	query := h.db.Model(&database.TransactionItem{}).
+		Select("transaction_items.product_id, transaction_items.quantity, products.cost, products.use_material_stock").
+		Joins("JOIN transactions ON transaction_items.transaction_id = transactions.id").
+		Joins("JOIN products ON transaction_items.product_id = products.id").
+		Where("transactions.tenant_id = ? AND transactions.created_at >= ? AND transactions.created_at <= ? AND transactions.status = ?",
+			tenantID, startDate, endDate, "completed")
+	
+	if outletID != "" {
+		query = query.Where("transactions.outlet_id = ?", outletID)
+	}
+	query.Scan(&items)
+	
+	var totalCost float64
+	for _, item := range items {
+		var unitCost float64
+		
+		if item.UseMaterialStock && item.Cost <= 0 {
+			// Calculate cost from materials
+			unitCost = h.calculateMaterialCost(item.ProductID)
+		} else {
+			unitCost = item.Cost
+		}
+		
+		totalCost += unitCost * float64(item.Quantity)
+	}
+	
+	return totalCost
+}
+
+// calculateMaterialCost calculates the cost of one unit of a product based on its raw materials
+func (h *Handler) calculateMaterialCost(productID uuid.UUID) float64 {
+	var productMaterials []database.ProductMaterial
+	h.db.Where("product_id = ?", productID).Preload("Material").Find(&productMaterials)
+
+	var totalCost float64
+	for _, pm := range productMaterials {
+		convRate := pm.ConversionRate
+		if convRate <= 0 {
+			convRate = 1
+		}
+		// Cost = quantity_used × conversion_rate × unit_price
+		totalCost += pm.QuantityUsed * convRate * pm.Material.UnitPrice
+	}
+	return totalCost
 }
 
 type ProductSalesReport struct {
@@ -170,15 +226,25 @@ func (h *Handler) GetProductSalesReport(c *gin.Context) {
 		}
 	}
 
-	var products []ProductSalesReport
-	productsQuery := h.db.Model(&database.TransactionItem{}).
+	// Get items grouped by product
+	type ProductItem struct {
+		ProductID        uuid.UUID
+		ProductName      string
+		TotalQty         int
+		TotalSales       float64
+		Cost             float64
+		UseMaterialStock bool
+	}
+	
+	var items []ProductItem
+	productQuery := h.db.Model(&database.TransactionItem{}).
 		Select(`
 			transaction_items.product_id, 
 			products.name as product_name, 
 			SUM(transaction_items.quantity) as total_qty, 
 			SUM(transaction_items.subtotal) as total_sales,
-			SUM(products.cost * transaction_items.quantity) as total_cost,
-			SUM(transaction_items.subtotal) - SUM(products.cost * transaction_items.quantity) as profit
+			products.cost,
+			products.use_material_stock
 		`).
 		Joins("JOIN transactions ON transaction_items.transaction_id = transactions.id").
 		Joins("JOIN products ON transaction_items.product_id = products.id").
@@ -186,12 +252,35 @@ func (h *Handler) GetProductSalesReport(c *gin.Context) {
 			tenantID, startDate, endDate, "completed")
 	
 	if req.OutletID != "" {
-		productsQuery = productsQuery.Where("transactions.outlet_id = ?", req.OutletID)
+		productQuery = productQuery.Where("transactions.outlet_id = ?", req.OutletID)
 	}
 	
-	productsQuery.Group("transaction_items.product_id, products.name").
+	productQuery.Group("transaction_items.product_id, products.name, products.cost, products.use_material_stock").
 		Order("total_sales DESC").
-		Scan(&products)
+		Scan(&items)
+
+	// Calculate proper cost for each product
+	var products []ProductSalesReport
+	for _, item := range items {
+		var unitCost float64
+		if item.UseMaterialStock && item.Cost <= 0 {
+			unitCost = h.calculateMaterialCost(item.ProductID)
+		} else {
+			unitCost = item.Cost
+		}
+		
+		totalCost := unitCost * float64(item.TotalQty)
+		
+		products = append(products, ProductSalesReport{
+			ProductID:   item.ProductID.String(),
+			ProductName: item.ProductName,
+			TotalQty:    item.TotalQty,
+			TotalSales:  item.TotalSales,
+			TotalCost:   totalCost,
+			Profit:      item.TotalSales - totalCost,
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": products})
 }
+
