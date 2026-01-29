@@ -42,12 +42,15 @@ func (h *Handler) GetSettings(c *gin.Context) {
 }
 
 type UpdateSettingsRequest struct {
-	QRISEnabled  *bool    `json:"qris_enabled"`
-	QRISImageURL *string  `json:"qris_image_url"`
-	QRISLabel    *string  `json:"qris_label"`
-	TaxEnabled   *bool    `json:"tax_enabled"`
-	TaxRate      *float64 `json:"tax_rate"`
-	TaxLabel     *string  `json:"tax_label"`
+	QRISEnabled          *bool    `json:"qris_enabled"`
+	QRISImageURL         *string  `json:"qris_image_url"`
+	QRISLabel            *string  `json:"qris_label"`
+	TaxEnabled           *bool    `json:"tax_enabled"`
+	TaxRate              *float64 `json:"tax_rate"`
+	TaxLabel             *string  `json:"tax_label"`
+	ServiceChargeEnabled *bool    `json:"service_charge_enabled"`
+	ServiceChargeRate    *float64 `json:"service_charge_rate"`
+	ServiceChargeLabel   *string  `json:"service_charge_label"`
 }
 
 // UpdateSettings updates the tenant's settings
@@ -92,6 +95,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.TaxLabel != nil {
 		settings.TaxLabel = *req.TaxLabel
+	}
+
+	// Update service charge fields if provided
+	if req.ServiceChargeEnabled != nil {
+		settings.ServiceChargeEnabled = *req.ServiceChargeEnabled
+	}
+	if req.ServiceChargeRate != nil {
+		settings.ServiceChargeRate = *req.ServiceChargeRate
+	}
+	if req.ServiceChargeLabel != nil {
+		settings.ServiceChargeLabel = *req.ServiceChargeLabel
 	}
 
 	// Save settings back to JSON

@@ -182,7 +182,13 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
-	total := subtotal - req.Discount + finalTax
+	// Calculate service charge if enabled
+	var serviceCharge float64
+	if tenantSettings.ServiceChargeEnabled && tenantSettings.ServiceChargeRate > 0 {
+		serviceCharge = subtotal * (tenantSettings.ServiceChargeRate / 100)
+	}
+
+	total := subtotal - req.Discount + finalTax + serviceCharge
 	paymentMethod := req.PaymentMethod
 	if paymentMethod == "" {
 		paymentMethod = "cash"

@@ -9,12 +9,15 @@ import (
 
 // TenantSettings represents configurable settings for a tenant
 type TenantSettings struct {
-	QRISEnabled  bool    `json:"qris_enabled"`   // Whether QRIS payment is enabled
-	QRISImageURL string  `json:"qris_image_url"` // URL to merchant's static QRIS image
-	QRISLabel    string  `json:"qris_label"`     // Display name, e.g., "BCA QRIS"
-	TaxEnabled   bool    `json:"tax_enabled"`    // Whether global tax/PPN is enabled
-	TaxRate      float64 `json:"tax_rate"`       // Tax percentage (e.g., 11 for PPN 11%)
-	TaxLabel     string  `json:"tax_label"`      // Label for tax, e.g., "PPN 11%"
+	QRISEnabled           bool    `json:"qris_enabled"`            // Whether QRIS payment is enabled
+	QRISImageURL          string  `json:"qris_image_url"`          // URL to merchant's static QRIS image
+	QRISLabel             string  `json:"qris_label"`              // Display name, e.g., "BCA QRIS"
+	TaxEnabled            bool    `json:"tax_enabled"`             // Whether global tax/PPN is enabled
+	TaxRate               float64 `json:"tax_rate"`                // Tax percentage (e.g., 11 for PPN 11%)
+	TaxLabel              string  `json:"tax_label"`               // Label for tax, e.g., "PPN 11%"
+	ServiceChargeEnabled  bool    `json:"service_charge_enabled"`  // Whether service charge is enabled
+	ServiceChargeRate     float64 `json:"service_charge_rate"`     // Service charge percentage (e.g., 5 or 10)
+	ServiceChargeLabel    string  `json:"service_charge_label"`    // Label, e.g., "Service 10%"
 }
 
 // Base model for all entities
