@@ -41,11 +41,17 @@ type InventorySummary struct {
 func (h *Handler) GetInventory(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
 	filter := c.Query("filter") // all, low, out
+	outletID := c.Query("outlet_id")
 
+	query := h.db.Where("tenant_id = ? AND is_active = ?", tenantID, true)
+	
+	// Filter by outlet if specified
+	if outletID != "" {
+		query = query.Where("outlet_id = ?", outletID)
+	}
+	
 	var products []database.Product
-	h.db.Where("tenant_id = ? AND is_active = ?", tenantID, true).
-		Order("name ASC").
-		Find(&products)
+	query.Order("name ASC").Find(&products)
 
 	var items []InventoryItem
 	for _, p := range products {
@@ -147,13 +153,23 @@ func (h *Handler) calculateMaterialCost(productID uuid.UUID) float64 {
 // GetSummary returns inventory summary stats
 func (h *Handler) GetSummary(c *gin.Context) {
 	tenantID := c.GetString("tenant_id")
+	outletID := c.Query("outlet_id")
 
 	var summary InventorySummary
+
+	// Build base query conditions
+	baseCondition := "tenant_id = ? AND is_active = ?"
+	baseArgs := []interface{}{tenantID, true}
+	
+	if outletID != "" {
+		baseCondition += " AND outlet_id = ?"
+		baseArgs = append(baseArgs, outletID)
+	}
 
 	// Total products
 	var totalProducts int64
 	h.db.Model(&database.Product{}).
-		Where("tenant_id = ? AND is_active = ?", tenantID, true).
+		Where(baseCondition, baseArgs...).
 		Count(&totalProducts)
 	summary.TotalProducts = int(totalProducts)
 
@@ -163,21 +179,21 @@ func (h *Handler) GetSummary(c *gin.Context) {
 	}
 	h.db.Model(&database.Product{}).
 		Select("COALESCE(SUM(stock_qty * cost), 0) as total").
-		Where("tenant_id = ? AND is_active = ?", tenantID, true).
+		Where(baseCondition, baseArgs...).
 		Scan(&stockValue)
 	summary.TotalStockValue = stockValue.Total
 
 	// Low stock count
 	var lowStock int64
 	h.db.Model(&database.Product{}).
-		Where("tenant_id = ? AND is_active = ? AND stock_qty > 0 AND stock_qty < 10", tenantID, true).
+		Where(baseCondition+" AND stock_qty > 0 AND stock_qty < 10", baseArgs...).
 		Count(&lowStock)
 	summary.LowStockCount = int(lowStock)
 
 	// Out of stock count
 	var outOfStock int64
 	h.db.Model(&database.Product{}).
-		Where("tenant_id = ? AND is_active = ? AND stock_qty <= 0", tenantID, true).
+		Where(baseCondition+" AND stock_qty <= 0", baseArgs...).
 		Count(&outOfStock)
 	summary.OutOfStockCount = int(outOfStock)
 

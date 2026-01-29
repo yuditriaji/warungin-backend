@@ -107,6 +107,21 @@ type User struct {
 	IsActive     bool       `gorm:"default:true" json:"is_active"`
 }
 
+// StaffInvite represents a pending staff invitation
+type StaffInvite struct {
+	BaseModel
+	TenantID  uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant    Tenant     `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
+	OutletID  *uuid.UUID `gorm:"type:uuid" json:"outlet_id"`
+	Outlet    *Outlet    `gorm:"foreignKey:OutletID" json:"outlet,omitempty"`
+	Email     string     `gorm:"not null" json:"email"`
+	Name      string     `gorm:"not null" json:"name"`
+	Role      string     `gorm:"not null" json:"role"` // manager, cashier
+	Token     string     `gorm:"uniqueIndex;not null" json:"-"`
+	Status    string     `gorm:"default:'pending'" json:"status"` // pending, accepted, cancelled, expired
+	ExpiresAt time.Time  `json:"expires_at"`
+}
+
 // Category for products
 type Category struct {
 	BaseModel
@@ -284,6 +299,7 @@ func Migrate(db *gorm.DB) error {
 		&UsageMetrics{},
 		&Outlet{},
 		&User{},
+		&StaffInvite{},
 		&Category{},
 		&Product{},
 		&ProductModifier{},

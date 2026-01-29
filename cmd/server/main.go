@@ -125,6 +125,11 @@ func main() {
 			protected.GET("/inventory/summary", inventoryHandler.GetSummary)
 			protected.GET("/inventory/alerts", inventoryHandler.GetAlerts)
 			protected.PUT("/inventory/:id/stock", inventoryHandler.UpdateStock)
+			
+			// Inventory import routes
+			importHandler := inventory.NewImportHandler(db)
+			protected.POST("/inventory/import", importHandler.ImportExcel)
+			protected.GET("/inventory/import/template", importHandler.DownloadTemplate)
 
 			// Payment routes
 			paymentHandler := payment.NewHandler(db)
@@ -183,7 +188,19 @@ func main() {
 			protected.PUT("/staff/:id", userHandler.UpdateStaff)
 			protected.DELETE("/staff/:id", userHandler.DeleteStaff)
 			protected.GET("/staff/logs", userHandler.GetActivityLogs)
+			
+			// Staff invitation routes (protected)
+			inviteHandler := user.NewInviteHandler(db)
+			protected.POST("/staff/invite", inviteHandler.InviteStaff)
+			protected.GET("/staff/invites", inviteHandler.GetPendingInvites)
+			protected.DELETE("/staff/invites/:id", inviteHandler.CancelInvite)
+			protected.POST("/staff/invites/:id/resend", inviteHandler.ResendInvite)
 		}
+
+		// Staff invitation routes (public - for accepting invites)
+		inviteHandler := user.NewInviteHandler(db)
+		v1.GET("/invite/validate", inviteHandler.ValidateInvite)
+		v1.POST("/invite/accept", inviteHandler.AcceptInvite)
 
 		// Webhooks (public, no auth)
 		paymentHandler := payment.NewHandler(db)
