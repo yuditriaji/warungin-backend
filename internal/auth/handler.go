@@ -138,6 +138,14 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 				return
 			}
 
+			// Create default outlet for the tenant
+			defaultOutlet := database.Outlet{
+				TenantID: tenant.ID,
+				Name:     "Outlet Utama",
+				IsActive: true,
+			}
+			h.db.Create(&defaultOutlet)
+
 			// Create default subscription (Gratis)
 			subscription := database.Subscription{
 				TenantID:               tenant.ID,
@@ -154,7 +162,7 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 			}
 			h.db.Create(&subscription)
 
-			// Create user
+			// Create user with default outlet assigned
 			user = database.User{
 				TenantID: tenant.ID,
 				Email:    userInfo.Email,
@@ -162,6 +170,7 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 				Name:     userInfo.Name,
 				Role:     "owner",
 				IsActive: true,
+				OutletID: &defaultOutlet.ID,
 			}
 			if err := h.db.Create(&user).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
@@ -255,6 +264,14 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	// Create default outlet for the tenant
+	defaultOutlet := database.Outlet{
+		TenantID: tenant.ID,
+		Name:     "Outlet Utama",
+		IsActive: true,
+	}
+	h.db.Create(&defaultOutlet)
+
 	// Create default subscription (Gratis)
 	subscription := database.Subscription{
 		TenantID:               tenant.ID,
@@ -271,7 +288,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 	h.db.Create(&subscription)
 
-	// Create owner user
+	// Create owner user with default outlet assigned
 	user := database.User{
 		TenantID:     tenant.ID,
 		Email:        req.Email,
@@ -279,6 +296,7 @@ func (h *Handler) Register(c *gin.Context) {
 		Name:         req.Name,
 		Role:         "owner",
 		IsActive:     true,
+		OutletID:     &defaultOutlet.ID,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {

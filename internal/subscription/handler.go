@@ -199,6 +199,22 @@ func (h *Handler) Upgrade(c *gin.Context) {
 		return
 	}
 
+	// Migrate products/materials/users with NULL outlet_id to first outlet
+	var firstOutlet database.Outlet
+	if err := h.db.Where("tenant_id = ?", tenantID).Order("created_at ASC").First(&firstOutlet).Error; err == nil {
+		h.db.Model(&database.Product{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+
+		h.db.Model(&database.RawMaterial{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+
+		h.db.Model(&database.User{}).
+			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
+			Update("outlet_id", firstOutlet.ID)
+	}
+
 	// Update subscription
 	subscription.Plan = req.Plan
 	subscription.MaxUsers = plan.MaxUsers
