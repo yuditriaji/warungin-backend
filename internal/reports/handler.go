@@ -165,8 +165,8 @@ func (h *Handler) calculateTotalCOGS(tenantID string, startDate, endDate time.Ti
 	for _, item := range items {
 		var unitCost float64
 		
-		if item.UseMaterialStock && item.Cost <= 0 {
-			// Calculate cost from materials
+		if item.UseMaterialStock {
+			// Calculate cost from materials when material-driven
 			unitCost = h.calculateMaterialCost(item.ProductID)
 		} else {
 			unitCost = item.Cost
@@ -263,7 +263,8 @@ func (h *Handler) GetProductSalesReport(c *gin.Context) {
 	var products []ProductSalesReport
 	for _, item := range items {
 		var unitCost float64
-		if item.UseMaterialStock && item.Cost <= 0 {
+		if item.UseMaterialStock {
+			// Calculate cost from materials when material-driven
 			unitCost = h.calculateMaterialCost(item.ProductID)
 		} else {
 			unitCost = item.Cost
