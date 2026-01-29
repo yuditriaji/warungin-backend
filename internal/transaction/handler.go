@@ -77,6 +77,14 @@ func (h *Handler) Create(c *gin.Context) {
 	var user database.User
 	h.db.Where("id = ?", userID).First(&user)
 
+	// Get tenant settings for global tax
+	var tenant database.Tenant
+	h.db.Where("id = ?", tenantID).First(&tenant)
+	var tenantSettings database.TenantSettings
+	if tenant.Settings != "" && tenant.Settings != "{}" {
+		json.Unmarshal([]byte(tenant.Settings), &tenantSettings)
+	}
+
 	// Start transaction
 	tx := h.db.Begin()
 
@@ -89,7 +97,7 @@ func (h *Handler) Create(c *gin.Context) {
 		orderNumber = lastOrder.OrderNumber + 1
 	}
 
-	// Calculate totals with per-product tax
+	// Calculate totals with per-product tax or global tax
 	var items []database.TransactionItem
 	var subtotal float64
 	var totalTax float64
@@ -161,10 +169,17 @@ func (h *Handler) Create(c *gin.Context) {
 		}
 	}
 
-	// Use calculated tax if not provided from request
+	// Calculate final tax:
+	// Priority: 1) Request-provided tax, 2) Global tenant tax, 3) Per-product tax sum
 	finalTax := req.Tax
 	if finalTax == 0 {
-		finalTax = totalTax
+		if tenantSettings.TaxEnabled && tenantSettings.TaxRate > 0 {
+			// Use global tenant PPN rate on subtotal
+			finalTax = subtotal * (tenantSettings.TaxRate / 100)
+		} else {
+			// Use accumulated per-product tax
+			finalTax = totalTax
+		}
 	}
 
 	total := subtotal - req.Discount + finalTax

@@ -42,9 +42,12 @@ func (h *Handler) GetSettings(c *gin.Context) {
 }
 
 type UpdateSettingsRequest struct {
-	QRISEnabled  *bool   `json:"qris_enabled"`
-	QRISImageURL *string `json:"qris_image_url"`
-	QRISLabel    *string `json:"qris_label"`
+	QRISEnabled  *bool    `json:"qris_enabled"`
+	QRISImageURL *string  `json:"qris_image_url"`
+	QRISLabel    *string  `json:"qris_label"`
+	TaxEnabled   *bool    `json:"tax_enabled"`
+	TaxRate      *float64 `json:"tax_rate"`
+	TaxLabel     *string  `json:"tax_label"`
 }
 
 // UpdateSettings updates the tenant's settings
@@ -69,7 +72,7 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		json.Unmarshal([]byte(tenant.Settings), &settings)
 	}
 
-	// Update fields if provided
+	// Update QRIS fields if provided
 	if req.QRISEnabled != nil {
 		settings.QRISEnabled = *req.QRISEnabled
 	}
@@ -78,6 +81,17 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.QRISLabel != nil {
 		settings.QRISLabel = *req.QRISLabel
+	}
+
+	// Update tax/PPN fields if provided
+	if req.TaxEnabled != nil {
+		settings.TaxEnabled = *req.TaxEnabled
+	}
+	if req.TaxRate != nil {
+		settings.TaxRate = *req.TaxRate
+	}
+	if req.TaxLabel != nil {
+		settings.TaxLabel = *req.TaxLabel
 	}
 
 	// Save settings back to JSON
