@@ -173,12 +173,12 @@ func (h *Handler) GetSummary(c *gin.Context) {
 		Count(&totalProducts)
 	summary.TotalProducts = int(totalProducts)
 
-	// Total stock value
+	// Total stock value (use cost if available, otherwise price)
 	var stockValue struct {
 		Total float64
 	}
 	h.db.Model(&database.Product{}).
-		Select("COALESCE(SUM(stock_qty * cost), 0) as total").
+		Select("COALESCE(SUM(stock_qty * CASE WHEN cost > 0 THEN cost ELSE price END), 0) as total").
 		Where(baseCondition, baseArgs...).
 		Scan(&stockValue)
 	summary.TotalStockValue = stockValue.Total
