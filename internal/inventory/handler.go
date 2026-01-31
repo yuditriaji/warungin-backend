@@ -83,6 +83,12 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			cost = h.calculateMaterialCost(p.ID)
 		}
 
+		// Calculate stock value using cost, or fallback to price
+		stockValueCost := cost
+		if stockValueCost <= 0 {
+			stockValueCost = p.Price
+		}
+
 		items = append(items, InventoryItem{
 			ProductID:        p.ID,
 			ProductName:      p.Name,
@@ -91,7 +97,7 @@ func (h *Handler) GetInventory(c *gin.Context) {
 			UseMaterialStock: p.UseMaterialStock,
 			Price:            p.Price,
 			Cost:             cost,
-			StockValue:       float64(stockQty) * cost,
+			StockValue:       float64(stockQty) * stockValueCost,
 			Status:           status,
 		})
 	}
