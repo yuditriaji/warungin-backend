@@ -595,23 +595,23 @@ func (h *Handler) ValidateReferralCode(c *gin.Context) {
 
 // DashboardStats returns overall stats for super admin
 func (h *Handler) DashboardStats(c *gin.Context) {
-	var affiliatorCount, tenantCount, totalEarnings, pendingPayouts int64
+	var affiliatorCount, tenantCount, referredTenants int64
 	var totalCommission, pendingCommission float64
 
 	h.db.Model(&database.PortalUser{}).Where("role = 'affiliator'").Count(&affiliatorCount)
 	h.db.Model(&database.Tenant{}).Count(&tenantCount)
-	h.db.Model(&database.AffiliateTenant{}).Count(&totalEarnings) // referred tenants
+	h.db.Model(&database.AffiliateTenant{}).Count(&referredTenants)
 
 	h.db.Model(&database.AffiliateEarning{}).Select("COALESCE(SUM(commission_amount), 0)").Scan(&totalCommission)
 	h.db.Model(&database.AffiliateEarning{}).Where("status = 'pending'").Select("COALESCE(SUM(commission_amount), 0)").Scan(&pendingCommission)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"affiliator_count":    affiliatorCount,
-			"tenant_count":        tenantCount,
-			"referred_tenants":    totalEarnings,
-			"total_commission":    totalCommission,
-			"pending_commission":  pendingCommission,
+			"affiliator_count":   affiliatorCount,
+			"tenant_count":       tenantCount,
+			"referred_tenants":   referredTenants,
+			"total_commission":   totalCommission,
+			"pending_commission": pendingCommission,
 		},
 	})
 }
