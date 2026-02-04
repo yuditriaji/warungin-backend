@@ -13,6 +13,7 @@ import (
 	"github.com/yuditriaji/warungin-backend/internal/material"
 	"github.com/yuditriaji/warungin-backend/internal/outlet"
 	"github.com/yuditriaji/warungin-backend/internal/payment"
+	"github.com/yuditriaji/warungin-backend/internal/portal"
 	"github.com/yuditriaji/warungin-backend/internal/product"
 	"github.com/yuditriaji/warungin-backend/internal/region"
 	"github.com/yuditriaji/warungin-backend/internal/reports"
@@ -208,6 +209,50 @@ func main() {
 		v1.GET("/webhook/xendit", paymentHandler.WebhookVerify)  // For URL verification
 		v1.POST("/webhook/midtrans", paymentHandler.Webhook) // Legacy support
 		v1.GET("/webhook/midtrans", paymentHandler.WebhookVerify)
+
+		// Referral code validation (public)
+		portalHandler := portal.NewHandler(db)
+		v1.GET("/referral/validate/:code", portalHandler.ValidateReferralCode)
+	}
+
+	// Portal API routes (for portal.warungin.com)
+	portalGroup := r.Group("/portal")
+	{
+		portalHandler := portal.NewHandler(db)
+
+		// Public portal routes
+		portalGroup.POST("/auth/login", portalHandler.Login)
+		portalGroup.GET("/auth/invite/:token", portalHandler.ValidateInvite)
+		portalGroup.POST("/auth/accept-invite", portalHandler.AcceptInvite)
+
+		// Protected portal routes
+		portalProtected := portalGroup.Group("")
+		portalProtected.Use(portal.PortalAuthMiddleware())
+		{
+			portalProtected.GET("/auth/me", portalHandler.GetMe)
+
+			// Earnings (all roles)
+			portalProtected.GET("/earnings", portalHandler.ListEarnings)
+
+			// Affiliator own data
+			portalProtected.GET("/my/tenants", portalHandler.MyTenants)
+			portalProtected.GET("/my/stats", portalHandler.MyStats)
+
+			// Super Admin only routes
+			adminRoutes := portalProtected.Group("")
+			adminRoutes.Use(portal.SuperAdminMiddleware())
+			{
+				adminRoutes.GET("/dashboard", portalHandler.DashboardStats)
+				adminRoutes.POST("/affiliators/invite", portalHandler.InviteAffiliator)
+				adminRoutes.GET("/affiliators", portalHandler.ListAffiliators)
+				adminRoutes.GET("/affiliators/:id", portalHandler.GetAffiliator)
+				adminRoutes.PUT("/affiliators/:id", portalHandler.UpdateAffiliator)
+				adminRoutes.DELETE("/affiliators/:id", portalHandler.DeleteAffiliator)
+				adminRoutes.GET("/tenants", portalHandler.ListTenants)
+				adminRoutes.POST("/tenants/:id/assign-affiliate", portalHandler.AssignAffiliate)
+				adminRoutes.POST("/payouts", portalHandler.RecordPayout)
+			}
+		}
 	}
 
 	// Start server

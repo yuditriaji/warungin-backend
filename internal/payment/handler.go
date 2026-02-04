@@ -324,6 +324,9 @@ func (h *Handler) XenditWebhook(c *gin.Context) {
 				fmt.Printf("Failed to upgrade subscription: %v\n", err)
 			} else {
 				fmt.Printf("Successfully upgraded subscription for tenant %s to plan %s\n", tenantID, plan)
+				
+				// Record affiliate commission if tenant has a referrer
+				h.recordAffiliateCommission(tenantID, plan, invoice.ID)
 			}
 		} else {
 			fmt.Printf("Warning: Could not upgrade subscription - missing tenantID or plan\n")
@@ -423,6 +426,52 @@ func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
 	subscription.CurrentPeriodEnd = time.Now().AddDate(0, 1, 0) // 1 month
 
 	return h.db.Save(&subscription).Error
+}
+
+// recordAffiliateCommission records commission for affiliate if tenant has a referrer
+func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoiceID uuid.UUID) {
+	// Check if tenant has an affiliate
+	var affTenant database.AffiliateTenant
+	if err := h.db.Where("tenant_id = ?", tenantID).First(&affTenant).Error; err != nil {
+		// No affiliate for this tenant
+		return
+	}
+
+	// Get subscription price (excluding PPN)
+	price, ok := PlanPrices[plan]
+	if !ok || price == 0 {
+		fmt.Printf("No price found for plan %s, skipping commission\n", plan)
+		return
+	}
+
+	// Calculate 10% commission
+	commissionRate := 10.0
+	commissionAmount := price * (commissionRate / 100)
+
+	// Create earning record
+	tenantUUID, _ := uuid.Parse(tenantID)
+	earning := database.AffiliateEarning{
+		PortalUserID:      affTenant.PortalUserID,
+		TenantID:          tenantUUID,
+		InvoiceID:         invoiceID,
+		SubscriptionPlan:  plan,
+		SubscriptionPrice: price,
+		CommissionRate:    commissionRate,
+		CommissionAmount:  commissionAmount,
+		Status:            "pending",
+	}
+
+	if err := h.db.Create(&earning).Error; err != nil {
+		fmt.Printf("Failed to create affiliate earning: %v\n", err)
+		return
+	}
+
+	// Update affiliator's pending payout
+	h.db.Model(&database.PortalUser{}).
+		Where("id = ?", affTenant.PortalUserID).
+		UpdateColumn("pending_payout", gorm.Expr("pending_payout + ?", commissionAmount))
+
+	fmt.Printf("Recorded affiliate commission: Rp %.0f for affiliator %s\n", commissionAmount, affTenant.PortalUserID)
 }
 
 // QRIS payment for POS transactions (keeping this for POS functionality)

@@ -291,6 +291,60 @@ type TransactionAuditLog struct {
 	CreatedAt     time.Time  `gorm:"autoCreateTime" json:"created_at"`
 }
 
+// PortalUser represents admin portal users (Super Admin or Affiliator)
+type PortalUser struct {
+	BaseModel
+	Email         string     `gorm:"uniqueIndex;not null" json:"email"`
+	PasswordHash  string     `json:"-"`
+	Name          string     `gorm:"not null" json:"name"`
+	Phone         string     `json:"phone"`
+	Role          string     `gorm:"not null" json:"role"` // super_admin, affiliator
+	ReferralCode  string     `gorm:"uniqueIndex" json:"referral_code"` // Only for affiliators, e.g., "BUDI2024"
+	BankName      string     `json:"bank_name"`
+	BankAccount   string     `json:"bank_account"`
+	BankHolder    string     `json:"bank_holder"`
+	TotalEarnings float64    `gorm:"default:0" json:"total_earnings"`
+	PendingPayout float64    `gorm:"default:0" json:"pending_payout"`
+	IsActive      bool       `gorm:"default:true" json:"is_active"`
+	InvitedBy     *uuid.UUID `gorm:"type:uuid" json:"invited_by"` // NULL for super admin
+}
+
+// AffiliateTenant links a tenant to their referrer (affiliator)
+type AffiliateTenant struct {
+	BaseModel
+	PortalUserID uuid.UUID  `gorm:"type:uuid;not null" json:"portal_user_id"` // Affiliator
+	PortalUser   PortalUser `gorm:"foreignKey:PortalUserID" json:"affiliator,omitempty"`
+	TenantID     uuid.UUID  `gorm:"type:uuid;uniqueIndex;not null" json:"tenant_id"`
+	Tenant       Tenant     `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
+}
+
+// AffiliateEarning tracks commission per subscription payment
+type AffiliateEarning struct {
+	BaseModel
+	PortalUserID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"portal_user_id"`
+	PortalUser        PortalUser `gorm:"foreignKey:PortalUserID" json:"affiliator,omitempty"`
+	TenantID          uuid.UUID  `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant            Tenant     `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
+	InvoiceID         uuid.UUID  `gorm:"type:uuid" json:"invoice_id"`
+	SubscriptionPlan  string     `json:"subscription_plan"`  // pemula, bisnis
+	SubscriptionPrice float64    `json:"subscription_price"` // Base price (excl. PPN)
+	CommissionRate    float64    `json:"commission_rate"`    // Rate at time of earning (10)
+	CommissionAmount  float64    `json:"commission_amount"`  // Calculated amount
+	Status            string     `gorm:"default:'pending'" json:"status"` // pending, paid
+	PaidAt            *time.Time `json:"paid_at"`
+}
+
+// PortalInvite represents pending affiliator invitations
+type PortalInvite struct {
+	BaseModel
+	Email     string    `gorm:"not null" json:"email"`
+	Name      string    `gorm:"not null" json:"name"`
+	Token     string    `gorm:"uniqueIndex;not null" json:"-"`
+	InvitedBy uuid.UUID `gorm:"type:uuid;not null" json:"invited_by"`
+	Status    string    `gorm:"default:'pending'" json:"status"` // pending, accepted, expired
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -312,6 +366,10 @@ func Migrate(db *gorm.DB) error {
 		&EmployeeInvite{},
 		&ActivityLog{},
 		&TransactionAuditLog{},
+		&PortalUser{},
+		&AffiliateTenant{},
+		&AffiliateEarning{},
+		&PortalInvite{},
 	)
 }
 

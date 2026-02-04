@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
 	"gorm.io/gorm"
 )
@@ -202,6 +203,7 @@ type UpdateProfileRequest struct {
 	CityID       *string `json:"city_id"`
 	CityName     *string `json:"city_name"`
 	PostalCode   *string `json:"postal_code"`
+	ReferralCode *string `json:"referral_code"` // Optional affiliate referral code
 }
 
 // UpdateProfile updates the tenant's profile (name, business_type, phone, address)
@@ -252,6 +254,25 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	if err := h.db.Save(&tenant).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
 		return
+	}
+
+	// Handle referral code - link tenant to affiliator
+	if req.ReferralCode != nil && *req.ReferralCode != "" {
+		// Check if tenant already has an affiliate
+		var existingAff database.AffiliateTenant
+		if err := h.db.Where("tenant_id = ?", tenantID).First(&existingAff).Error; err != nil {
+			// No existing affiliate - look up the referral code
+			var affiliator database.PortalUser
+			if err := h.db.Where("referral_code = ? AND is_active = true AND role = 'affiliator'", *req.ReferralCode).First(&affiliator).Error; err == nil {
+				// Valid code - create affiliate tenant link
+				tenantUUID, _ := uuid.Parse(tenantID)
+				affTenant := database.AffiliateTenant{
+					PortalUserID: affiliator.ID,
+					TenantID:     tenantUUID,
+				}
+				h.db.Create(&affTenant)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
