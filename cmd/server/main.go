@@ -220,10 +220,11 @@ func main() {
 	{
 		portalHandler := portal.NewHandler(db)
 
-		// Public portal routes
+	// Public portal routes
 		portalGroup.POST("/auth/login", portalHandler.Login)
 		portalGroup.GET("/auth/invite/:token", portalHandler.ValidateInvite)
 		portalGroup.POST("/auth/accept-invite", portalHandler.AcceptInvite)
+		portalGroup.POST("/auth/setup", portalHandler.SetupSuperAdmin) // One-time setup
 
 		// Protected portal routes
 		portalProtected := portalGroup.Group("")

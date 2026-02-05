@@ -162,6 +162,67 @@ func (h *Handler) GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": user})
 }
 
+// SetupSuperAdmin creates or resets the super admin account (one-time setup)
+type SetupRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=6"`
+	Name     string `json:"name" binding:"required"`
+	Secret   string `json:"secret" binding:"required"` // Requires PORTAL_SETUP_SECRET env var
+}
+
+func (h *Handler) SetupSuperAdmin(c *gin.Context) {
+	var req SetupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate setup secret
+	setupSecret := os.Getenv("PORTAL_SETUP_SECRET")
+	if setupSecret == "" {
+		setupSecret = "warungin-setup-2024" // Default for initial setup
+	}
+	if req.Secret != setupSecret {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid setup secret"})
+		return
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	// Check if user exists
+	var existing database.PortalUser
+	if err := h.db.Where("email = ?", req.Email).First(&existing).Error; err == nil {
+		// Update existing user
+		existing.PasswordHash = string(hashedPassword)
+		existing.Name = req.Name
+		existing.Role = "super_admin"
+		existing.IsActive = true
+		h.db.Save(&existing)
+		c.JSON(http.StatusOK, gin.H{"message": "Super admin password reset successfully", "email": req.Email})
+		return
+	}
+
+	// Create new super admin
+	user := database.PortalUser{
+		Email:        req.Email,
+		PasswordHash: string(hashedPassword),
+		Name:         req.Name,
+		Role:         "super_admin",
+		IsActive:     true,
+	}
+	if err := h.db.Create(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create account"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Super admin created successfully", "email": req.Email})
+}
+
 // ============== AFFILIATOR MANAGEMENT (Super Admin) ==============
 
 type InviteAffiliatorRequest struct {
