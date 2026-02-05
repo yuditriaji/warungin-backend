@@ -13,16 +13,21 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/yuditriaji/warungin-backend/pkg/database"
+	"github.com/yuditriaji/warungin-backend/pkg/email"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	db *gorm.DB
+	db           *gorm.DB
+	emailService *email.EmailService
 }
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+	return &Handler{
+		db:           db,
+		emailService: email.NewEmailService(),
+	}
 }
 
 // ============== AUTH ==============
@@ -279,12 +284,26 @@ func (h *Handler) InviteAffiliator(c *gin.Context) {
 	}
 	inviteURL := fmt.Sprintf("%s/accept-invite?token=%s", portalURL, token)
 
+	// Send invitation email
+	emailSent := false
+	if h.emailService.IsConfigured() {
+		if err := h.emailService.SendAffiliateInvitation(req.Email, req.Name, token, portalURL); err == nil {
+			emailSent = true
+		}
+	}
+
+	message := "Invitation created successfully and email sent to the affiliator."
+	if !emailSent {
+		message = "Invitation created. Email not configured - please share the invite URL manually."
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"invite":     invite,
 			"invite_url": inviteURL,
+			"email_sent": emailSent,
 		},
-		"message": "Invitation created. Share the URL with the affiliator.",
+		"message": message,
 	})
 }
 
