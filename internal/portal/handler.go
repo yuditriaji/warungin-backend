@@ -593,6 +593,62 @@ func (h *Handler) RecordManualCommission(c *gin.Context) {
 	})
 }
 
+// SyncMissingCommissions finds all affiliate tenants on paid plans and creates any missing commission records
+func (h *Handler) SyncMissingCommissions(c *gin.Context) {
+	var synced int
+	
+	// Find all affiliate tenants
+	var affTenants []database.AffiliateTenant
+	h.db.Preload("Tenant").Preload("Tenant.Subscription").Find(&affTenants)
+	
+	for _, affTenant := range affTenants {
+		if affTenant.Tenant.Subscription == nil {
+			continue
+		}
+		
+		plan := affTenant.Tenant.Subscription.Plan
+		if plan == "gratis" || plan == "" {
+			continue
+		}
+		
+		// Check if commission exists for this tenant's current plan
+		var existingEarning database.AffiliateEarning
+		if err := h.db.Where("tenant_id = ? AND subscription_plan = ?", affTenant.TenantID, plan).First(&existingEarning).Error; err != nil {
+			// No commission exists - create one
+			price, ok := planPrices[plan]
+			if !ok || price == 0 {
+				continue
+			}
+			
+			commissionRate := 10.0
+			commissionAmount := price * (commissionRate / 100)
+			
+			earning := database.AffiliateEarning{
+				PortalUserID:      affTenant.PortalUserID,
+				TenantID:          affTenant.TenantID,
+				SubscriptionPlan:  plan,
+				SubscriptionPrice: price,
+				CommissionRate:    commissionRate,
+				CommissionAmount:  commissionAmount,
+				Status:            "pending",
+			}
+			
+			if err := h.db.Create(&earning).Error; err == nil {
+				// Update affiliator's pending payout
+				h.db.Model(&database.PortalUser{}).
+					Where("id = ?", affTenant.PortalUserID).
+					UpdateColumn("pending_payout", gorm.Expr("pending_payout + ?", commissionAmount))
+				synced++
+			}
+		}
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Synced %d missing commissions", synced),
+		"synced":  synced,
+	})
+}
+
 // ============== EARNINGS ==============
 
 // ListEarnings returns earnings (all for super_admin, own for affiliator)
