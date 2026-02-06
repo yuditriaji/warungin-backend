@@ -252,6 +252,7 @@ func main() {
 				adminRoutes.GET("/tenants", portalHandler.ListTenants)
 				adminRoutes.POST("/tenants/:id/assign-affiliate", portalHandler.AssignAffiliate)
 				adminRoutes.POST("/payouts", portalHandler.RecordPayout)
+				adminRoutes.POST("/tenants/:id/record-commission", portalHandler.RecordManualCommission)
 			}
 		}
 	}

@@ -510,6 +510,89 @@ func (h *Handler) AssignAffiliate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Tenant assigned to affiliator"})
 }
 
+type RecordManualCommissionRequest struct {
+	TenantID         string  `json:"tenant_id" binding:"required"`
+	SubscriptionPlan string  `json:"subscription_plan" binding:"required"`
+	SubscriptionPrice float64 `json:"subscription_price" binding:"required"`
+}
+
+// Plan prices for commission calculation
+var planPrices = map[string]float64{
+	"pemula":     49000,
+	"bisnis":     149000,
+	"enterprise": 499000,
+}
+
+// RecordManualCommission allows super admin to manually record commission for a tenant
+func (h *Handler) RecordManualCommission(c *gin.Context) {
+	var req RecordManualCommissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tenantUUID, err := uuid.Parse(req.TenantID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid tenant ID"})
+		return
+	}
+
+	// Check if tenant has an affiliate
+	var affTenant database.AffiliateTenant
+	if err := h.db.Preload("PortalUser").Where("tenant_id = ?", tenantUUID).First(&affTenant).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tenant does not have an affiliate referrer"})
+		return
+	}
+
+	// Use provided price or default plan price
+	price := req.SubscriptionPrice
+	if price == 0 {
+		if p, ok := planPrices[req.SubscriptionPlan]; ok {
+			price = p
+		}
+	}
+
+	if price == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Subscription price is required for this plan"})
+		return
+	}
+
+	// Calculate 10% commission
+	commissionRate := 10.0
+	commissionAmount := price * (commissionRate / 100)
+
+	// Create earning record
+	earning := database.AffiliateEarning{
+		PortalUserID:      affTenant.PortalUserID,
+		TenantID:          tenantUUID,
+		SubscriptionPlan:  req.SubscriptionPlan,
+		SubscriptionPrice: price,
+		CommissionRate:    commissionRate,
+		CommissionAmount:  commissionAmount,
+		Status:            "pending",
+	}
+
+	if err := h.db.Create(&earning).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create earning record"})
+		return
+	}
+
+	// Update affiliator's pending payout
+	h.db.Model(&database.PortalUser{}).
+		Where("id = ?", affTenant.PortalUserID).
+		UpdateColumn("pending_payout", gorm.Expr("pending_payout + ?", commissionAmount))
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Commission of Rp %.0f recorded for affiliator %s", commissionAmount, affTenant.PortalUser.Name),
+		"data": gin.H{
+			"commission_amount":  commissionAmount,
+			"subscription_plan":  req.SubscriptionPlan,
+			"subscription_price": price,
+			"affiliator_name":    affTenant.PortalUser.Name,
+		},
+	})
+}
+
 // ============== EARNINGS ==============
 
 // ListEarnings returns earnings (all for super_admin, own for affiliator)
