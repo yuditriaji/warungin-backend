@@ -437,10 +437,30 @@ func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoic
 		return
 	}
 
+	tenantUUID, _ := uuid.Parse(tenantID)
+
+	// Check if commission already exists for this invoice or this month's subscription
+	var existingEarning database.AffiliateEarning
+	thisMonth := time.Now().Format("2006-01")
+	
+	// If we have an invoice ID, check by invoice
+	if invoiceID != uuid.Nil {
+		if err := h.db.Where("tenant_id = ? AND invoice_id = ?", tenantUUID, invoiceID).First(&existingEarning).Error; err == nil {
+			fmt.Printf("Commission already exists for invoice %s, skipping\\n", invoiceID)
+			return
+		}
+	} else {
+		// Otherwise check if we already have a commission this month for this tenant
+		if err := h.db.Where("tenant_id = ? AND subscription_plan = ? AND created_at >= ?", tenantUUID, plan, thisMonth+"-01").First(&existingEarning).Error; err == nil {
+			fmt.Printf("Commission already exists for tenant %s this month, skipping\\n", tenantID)
+			return
+		}
+	}
+
 	// Get subscription price (excluding PPN)
 	price, ok := PlanPrices[plan]
 	if !ok || price == 0 {
-		fmt.Printf("No price found for plan %s, skipping commission\n", plan)
+		fmt.Printf("No price found for plan %s, skipping commission\\n", plan)
 		return
 	}
 
@@ -449,7 +469,6 @@ func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoic
 	commissionAmount := price * (commissionRate / 100)
 
 	// Create earning record
-	tenantUUID, _ := uuid.Parse(tenantID)
 	earning := database.AffiliateEarning{
 		PortalUserID:      affTenant.PortalUserID,
 		TenantID:          tenantUUID,
@@ -462,7 +481,7 @@ func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoic
 	}
 
 	if err := h.db.Create(&earning).Error; err != nil {
-		fmt.Printf("Failed to create affiliate earning: %v\n", err)
+		fmt.Printf("Failed to create affiliate earning: %v\\n", err)
 		return
 	}
 
@@ -471,7 +490,38 @@ func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoic
 		Where("id = ?", affTenant.PortalUserID).
 		UpdateColumn("pending_payout", gorm.Expr("pending_payout + ?", commissionAmount))
 
-	fmt.Printf("Recorded affiliate commission: Rp %.0f for affiliator %s\n", commissionAmount, affTenant.PortalUserID)
+	fmt.Printf("Recorded affiliate commission: Rp %.0f for affiliator %s\\n", commissionAmount, affTenant.PortalUserID)
+}
+
+// RecordMissingCommissions checks for tenants with affiliates on paid plans who don't have commission recorded
+// This is meant to be called to fix historical data or as a scheduled job
+func (h *Handler) RecordMissingCommissions() {
+	fmt.Println("Checking for missing affiliate commissions...")
+	
+	// Find all affiliate tenants
+	var affTenants []database.AffiliateTenant
+	h.db.Preload("Tenant").Preload("Tenant.Subscription").Find(&affTenants)
+	
+	for _, affTenant := range affTenants {
+		if affTenant.Tenant.Subscription == nil {
+			continue
+		}
+		
+		plan := affTenant.Tenant.Subscription.Plan
+		if plan == "gratis" || plan == "" {
+			continue
+		}
+		
+		// Check if commission exists for this tenant's current plan
+		var existingEarning database.AffiliateEarning
+		if err := h.db.Where("tenant_id = ? AND subscription_plan = ?", affTenant.TenantID, plan).First(&existingEarning).Error; err != nil {
+			// No commission exists - create one
+			fmt.Printf("Creating missing commission for tenant %s on plan %s\\n", affTenant.TenantID, plan)
+			h.recordAffiliateCommission(affTenant.TenantID.String(), plan, uuid.Nil)
+		}
+	}
+	
+	fmt.Println("Finished checking for missing commissions")
 }
 
 // QRIS payment for POS transactions (keeping this for POS functionality)

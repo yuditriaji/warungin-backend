@@ -253,6 +253,10 @@ func main() {
 				adminRoutes.POST("/tenants/:id/assign-affiliate", portalHandler.AssignAffiliate)
 				adminRoutes.POST("/payouts", portalHandler.RecordPayout)
 				adminRoutes.POST("/tenants/:id/record-commission", portalHandler.RecordManualCommission)
+				adminRoutes.POST("/sync-commissions", func(c *gin.Context) {
+					paymentHandler.RecordMissingCommissions()
+					c.JSON(200, gin.H{"message": "Missing commissions synced"})
+				})
 			}
 		}
 	}
