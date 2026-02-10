@@ -60,7 +60,10 @@ type Subscription struct {
 	DataRetentionDays      int        `gorm:"default:30" json:"data_retention_days"`
 	CurrentPeriodStart     time.Time  `json:"current_period_start"`
 	CurrentPeriodEnd       time.Time  `json:"current_period_end"`
-	PaymentGatewayID       string     `json:"-"` // Hidden - Midtrans subscription ID
+	BillingPeriod          string     `gorm:"default:'monthly'" json:"billing_period"` // monthly, quarterly, yearly
+	CancelledAt            *time.Time `json:"cancelled_at"`                             // When cancellation was requested
+	AutoRenew              bool       `gorm:"default:true" json:"auto_renew"`           // Whether to auto-renew
+	PaymentGatewayID       string     `json:"-"`                                        // Hidden - payment gateway reference
 }
 
 // UsageMetrics tracks tenant usage per period
@@ -218,7 +221,7 @@ type Transaction struct {
 	Total         float64           `gorm:"not null" json:"total"`
 	Status        string            `gorm:"default:'completed'" json:"status"` // completed, voided, pending
 	PaymentMethod string            `gorm:"default:'cash'" json:"payment_method"` // cash, qris, gopay, ovo, dana
-	PaymentRef    string            `json:"payment_ref"` // Midtrans transaction ID
+	PaymentRef    string            `json:"payment_ref"` // Payment reference ID
 	IsSynced      bool              `gorm:"default:true" json:"is_synced"` // For offline support
 }
 
@@ -236,13 +239,14 @@ type TransactionItem struct {
 // Invoice represents subscription billing invoices
 type Invoice struct {
 	BaseModel
-	SubscriptionID uuid.UUID `gorm:"type:uuid;not null" json:"subscription_id"`
-	InvoiceNumber  string    `gorm:"uniqueIndex;not null" json:"invoice_number"`
-	Amount         float64   `gorm:"not null" json:"amount"`
-	Status         string    `gorm:"default:'pending'" json:"status"` // pending, paid, failed
-	DueDate        time.Time `json:"due_date"`
+	SubscriptionID uuid.UUID  `gorm:"type:uuid;not null" json:"subscription_id"`
+	InvoiceNumber  string     `gorm:"uniqueIndex;not null" json:"invoice_number"`
+	Amount         float64    `gorm:"not null" json:"amount"`
+	Status         string     `gorm:"default:'pending'" json:"status"` // pending, paid, failed, expired
+	DueDate        time.Time  `json:"due_date"`
 	PaidAt         *time.Time `json:"paid_at"`
-	PaymentRef     string    `json:"payment_ref"` // Midtrans payment ID
+	PaymentRef     string     `json:"payment_ref"`     // Doku payment reference
+	BillingPeriod  string     `json:"billing_period"`  // monthly, quarterly, yearly
 }
 
 // EmployeeInvite represents pending employee invitations

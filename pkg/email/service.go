@@ -184,3 +184,161 @@ func (s *EmailService) SendAffiliateInvitation(toEmail, affiliateName, inviteTok
 	subject := "Undangan Program Afiliasi Warungin"
 	return s.SendEmail(toEmail, subject, htmlBody)
 }
+
+// SendExpiryReminderEmail sends a renewal reminder for active (non-cancelled) subscriptions
+func (s *EmailService) SendExpiryReminderEmail(toEmail, userName, tenantName, planName, expiryDate string, daysLeft int) error {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://app.warungin.com"
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%%, #d97706 100%%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">⏰ Langganan Akan Berakhir</h1>
+        </div>
+        <div style="background: white; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px;">Hai <strong>%s</strong>,</p>
+            <p style="color: #374151; font-size: 16px;">Langganan <strong>Warungin %s</strong> untuk <strong>%s</strong> akan berakhir dalam <strong>%d hari</strong> (<strong>%s</strong>).</p>
+            <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 16px; margin: 20px 0;">
+                <p style="color: #92400e; margin: 0; font-size: 14px;">Setelah berakhir, akun Anda akan otomatis beralih ke paket Gratis dengan fitur terbatas.</p>
+            </div>
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="%s/settings" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%%, #a855f7 100%%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: bold; font-size: 16px;">Perpanjang Sekarang</a>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 Warungin. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, userName, planName, tenantName, daysLeft, expiryDate, frontendURL)
+
+	subject := fmt.Sprintf("⏰ Langganan Warungin %s berakhir dalam %d hari", planName, daysLeft)
+	return s.SendEmail(toEmail, subject, htmlBody)
+}
+
+// SendSubscriptionEndingEmail sends ending notice for cancelled subscriptions
+func (s *EmailService) SendSubscriptionEndingEmail(toEmail, userName, tenantName, planName, expiryDate string, daysLeft int) error {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://app.warungin.com"
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="background: linear-gradient(135deg, #6b7280 0%%, #4b5563 100%%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">📋 Langganan Segera Berakhir</h1>
+        </div>
+        <div style="background: white; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px;">Hai <strong>%s</strong>,</p>
+            <p style="color: #374151; font-size: 16px;">Sesuai permintaan pembatalan Anda, langganan <strong>Warungin %s</strong> untuk <strong>%s</strong> akan berakhir dalam <strong>%d hari</strong> (<strong>%s</strong>).</p>
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin: 20px 0;">
+                <p style="color: #166534; margin: 0; font-size: 14px;">💡 Berubah pikiran? Anda masih bisa mengaktifkan kembali langganan sebelum tanggal berakhir.</p>
+            </div>
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="%s/settings" style="display: inline-block; background: linear-gradient(135deg, #16a34a 0%%, #22c55e 100%%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: bold; font-size: 16px;">Aktifkan Kembali</a>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 Warungin. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, userName, planName, tenantName, daysLeft, expiryDate, frontendURL)
+
+	subject := fmt.Sprintf("📋 Langganan Warungin %s berakhir dalam %d hari", planName, daysLeft)
+	return s.SendEmail(toEmail, subject, htmlBody)
+}
+
+// SendDowngradeNotificationEmail notifies when subscription is auto-downgraded to Gratis
+func (s *EmailService) SendDowngradeNotificationEmail(toEmail, userName, tenantName, previousPlan string) error {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://app.warungin.com"
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="background: linear-gradient(135deg, #ef4444 0%%, #dc2626 100%%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">ℹ️ Langganan Telah Berakhir</h1>
+        </div>
+        <div style="background: white; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px;">Hai <strong>%s</strong>,</p>
+            <p style="color: #374151; font-size: 16px;">Langganan <strong>Warungin %s</strong> untuk <strong>%s</strong> telah berakhir. Akun Anda sekarang menggunakan paket <strong>Gratis</strong>.</p>
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; margin: 20px 0;">
+                <p style="color: #991b1b; margin: 0 0 8px 0; font-size: 14px; font-weight: bold;">Fitur yang terbatas di paket Gratis:</p>
+                <ul style="color: #991b1b; margin: 0; padding-left: 20px; font-size: 14px;">
+                    <li>Maksimal 1 pengguna</li>
+                    <li>Maksimal 50 produk</li>
+                    <li>Maksimal 30 transaksi/hari</li>
+                    <li>Retensi data 30 hari</li>
+                </ul>
+            </div>
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="%s/settings" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%%, #a855f7 100%%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: bold; font-size: 16px;">Berlangganan Kembali</a>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 Warungin. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, userName, previousPlan, tenantName, frontendURL)
+
+	subject := "ℹ️ Langganan Warungin Anda telah berakhir"
+	return s.SendEmail(toEmail, subject, htmlBody)
+}
+
+// SendCancellationConfirmationEmail confirms subscription cancellation
+func (s *EmailService) SendCancellationConfirmationEmail(toEmail, userName, tenantName, planName, endDate string) error {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://app.warungin.com"
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="background: linear-gradient(135deg, #6b7280 0%%, #4b5563 100%%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Konfirmasi Pembatalan Langganan</h1>
+        </div>
+        <div style="background: white; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px;">Hai <strong>%s</strong>,</p>
+            <p style="color: #374151; font-size: 16px;">Pembatalan langganan <strong>Warungin %s</strong> untuk <strong>%s</strong> telah dikonfirmasi.</p>
+            <div style="background: #f3f4f6; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                <p style="color: #374151; margin: 0 0 8px 0; font-size: 14px;"><strong>Tanggal berakhir:</strong> %s</p>
+                <p style="color: #6b7280; margin: 0; font-size: 14px;">Anda tetap memiliki akses penuh ke semua fitur %s hingga tanggal tersebut.</p>
+            </div>
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px; margin: 20px 0;">
+                <p style="color: #166534; margin: 0; font-size: 14px;">💡 Berubah pikiran? Anda bisa mengaktifkan kembali langganan kapan saja sebelum tanggal berakhir.</p>
+            </div>
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="%s/settings" style="display: inline-block; background: linear-gradient(135deg, #16a34a 0%%, #22c55e 100%%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: bold; font-size: 16px;">Aktifkan Kembali</a>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 Warungin. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, userName, planName, tenantName, endDate, planName, frontendURL)
+
+	subject := fmt.Sprintf("Konfirmasi pembatalan langganan Warungin %s", planName)
+	return s.SendEmail(toEmail, subject, htmlBody)
+}

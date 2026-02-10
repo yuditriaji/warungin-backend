@@ -132,11 +132,6 @@ func main() {
 			protected.POST("/inventory/import", importHandler.ImportExcel)
 			protected.GET("/inventory/import/template", importHandler.DownloadTemplate)
 
-			// Payment routes
-			paymentHandler := payment.NewHandler(db)
-			protected.POST("/payment/qris", paymentHandler.CreateQRIS)
-			protected.GET("/payment/status/:order_id", paymentHandler.CheckStatus)
-
 			// Subscription routes
 			subscriptionHandler := subscription.NewHandler(db)
 			protected.GET("/subscription/plans", subscriptionHandler.GetPlans)
@@ -144,10 +139,14 @@ func main() {
 			protected.GET("/subscription/usage", subscriptionHandler.GetUsage)
 			protected.POST("/subscription/upgrade", subscriptionHandler.Upgrade)
 
-			// Payment routes (Xendit)
-			paymentH := payment.NewHandler(db)
-			protected.POST("/payment/invoice", paymentH.CreateSubscriptionInvoice)
-			protected.GET("/payment/invoice/:invoice_id/status", paymentH.GetInvoiceStatus)
+			// Payment routes (Doku QRIS)
+			paymentHandler := payment.NewHandler(db)
+			protected.POST("/payment/subscription/qris", paymentHandler.CreateSubscriptionQRIS)
+			protected.GET("/payment/subscription/qris/:reference/status", paymentHandler.CheckQRISStatus)
+
+			// Cancel / Reactivate subscription
+			protected.POST("/subscription/cancel", subscriptionHandler.CancelSubscription)
+			protected.POST("/subscription/reactivate", subscriptionHandler.ReactivateSubscription)
 
 			// Tenant settings routes
 			tenantHandler := tenant.NewHandler(db)
@@ -205,10 +204,8 @@ func main() {
 
 		// Webhooks (public, no auth)
 		paymentHandler := payment.NewHandler(db)
-		v1.POST("/webhook/xendit", paymentHandler.XenditWebhook)
-		v1.GET("/webhook/xendit", paymentHandler.WebhookVerify)  // For URL verification
-		v1.POST("/webhook/midtrans", paymentHandler.Webhook) // Legacy support
-		v1.GET("/webhook/midtrans", paymentHandler.WebhookVerify)
+		v1.POST("/webhook/doku", paymentHandler.DokuWebhook)
+		v1.GET("/webhook/doku", paymentHandler.WebhookVerify)
 
 		// Referral code validation (public)
 		portalHandler := portal.NewHandler(db)
@@ -257,6 +254,10 @@ func main() {
 			}
 		}
 	}
+
+	// Start subscription lifecycle scheduler
+	subScheduler := subscription.NewScheduler(db)
+	subScheduler.Start()
 
 	// Start server
 	port := os.Getenv("PORT")

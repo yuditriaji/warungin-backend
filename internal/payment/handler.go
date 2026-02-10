@@ -1,12 +1,10 @@
 package payment
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,56 +21,88 @@ func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{db: db}
 }
 
-// XenditConfig holds Xendit API configuration
-type XenditConfig struct {
-	APIKey       string
-	WebhookToken string
-	BaseURL      string
+// BillingPeriod represents a subscription billing cycle
+type BillingPeriod string
+
+const (
+	BillingMonthly   BillingPeriod = "monthly"
+	BillingQuarterly BillingPeriod = "quarterly"
+	BillingYearly    BillingPeriod = "yearly"
+)
+
+// PlanPricing holds prices for each billing period
+type PlanPricing struct {
+	Monthly   float64
+	Quarterly float64
+	Yearly    float64
 }
 
-func getXenditConfig() XenditConfig {
-	apiKey := os.Getenv("XENDIT_API_KEY")
-	baseURL := os.Getenv("XENDIT_BASE_URL")
-	webhookToken := os.Getenv("XENDIT_WEBHOOK_TOKEN")
-	if baseURL == "" {
-		baseURL = "https://api.xendit.co" // Same URL for sandbox and production
+// GetPrice returns the price for a specific billing period
+func (p PlanPricing) GetPrice(period BillingPeriod) float64 {
+	switch period {
+	case BillingQuarterly:
+		return p.Quarterly
+	case BillingYearly:
+		return p.Yearly
+	default:
+		return p.Monthly
 	}
-	return XenditConfig{
-		APIKey:       apiKey,
-		WebhookToken: webhookToken,
-		BaseURL:      baseURL,
+}
+
+// GetPeriodMonths returns the number of months for a billing period
+func GetPeriodMonths(period BillingPeriod) int {
+	switch period {
+	case BillingQuarterly:
+		return 3
+	case BillingYearly:
+		return 12
+	default:
+		return 1
 	}
 }
 
-// CreateInvoiceRequest for subscription payment
-type CreateInvoiceRequest struct {
-	Plan        string `json:"plan" binding:"required"` // pemula, bisnis, enterprise
-	Email       string `json:"email" binding:"required"`
-	Description string `json:"description"`
+// ValidBillingPeriod checks if a billing period string is valid
+func ValidBillingPeriod(period string) bool {
+	switch BillingPeriod(period) {
+	case BillingMonthly, BillingQuarterly, BillingYearly:
+		return true
+	}
+	return false
 }
 
-// InvoiceResponse from Xendit
-type InvoiceResponse struct {
-	InvoiceID   string    `json:"invoice_id"`
-	InvoiceURL  string    `json:"invoice_url"`
-	ExternalID  string    `json:"external_id"`
+// PlanPrices defines pricing for each plan across billing periods
+var PlanPrices = map[string]PlanPricing{
+	"gratis":     {Monthly: 0, Quarterly: 0, Yearly: 0},
+	"pemula":     {Monthly: 49000, Quarterly: 132000, Yearly: 470000},
+	"bisnis":     {Monthly: 149000, Quarterly: 399000, Yearly: 1430000},
+	"enterprise": {Monthly: 0, Quarterly: 0, Yearly: 0},
+}
+
+// --- QRIS Subscription Payment ---
+
+// CreateQRISSubscriptionRequest is the request to generate a QRIS for subscription payment
+type CreateQRISSubscriptionRequest struct {
+	Plan          string `json:"plan" binding:"required"`
+	BillingPeriod string `json:"billing_period" binding:"required"`
+	Email         string `json:"email" binding:"required"`
+}
+
+// QRISSubscriptionResponse is returned to the frontend with QRIS data
+type QRISSubscriptionResponse struct {
+	QRContent   string    `json:"qr_content"`
+	QRImageURL  string    `json:"qr_image_url"`
 	Amount      float64   `json:"amount"`
-	Status      string    `json:"status"`
+	BaseAmount  float64   `json:"base_amount"`
+	PPNAmount   float64   `json:"ppn_amount"`
 	ExpiresAt   time.Time `json:"expires_at"`
-	Description string    `json:"description"`
+	ReferenceNo string    `json:"reference_no"`
+	Plan        string    `json:"plan"`
+	Period      string    `json:"billing_period"`
 }
 
-// Plan prices
-var PlanPrices = map[string]float64{
-	"gratis":     0,
-	"pemula":     49000,
-	"bisnis":     149000,
-	"enterprise": 0, // Custom pricing - contact sales
-}
-
-// CreateSubscriptionInvoice creates a Xendit invoice for subscription upgrade
-func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
-	var req CreateInvoiceRequest
+// CreateSubscriptionQRIS generates a Doku QRIS code for subscription payment
+func (h *Handler) CreateSubscriptionQRIS(c *gin.Context) {
+	var req CreateQRISSubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -80,274 +110,391 @@ func (h *Handler) CreateSubscriptionInvoice(c *gin.Context) {
 
 	tenantID := c.GetString("tenant_id")
 
+	// Validate billing period
+	if !ValidBillingPeriod(req.BillingPeriod) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Periode billing tidak valid. Pilih: monthly, quarterly, yearly"})
+		return
+	}
+
 	// Check plan price
-	price, ok := PlanPrices[req.Plan]
+	pricing, ok := PlanPrices[req.Plan]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plan"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Paket tidak valid"})
 		return
 	}
 
-	if price == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "This plan doesn't require payment"})
+	period := BillingPeriod(req.BillingPeriod)
+	basePrice := pricing.GetPrice(period)
+
+	if basePrice == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Paket ini tidak memerlukan pembayaran"})
 		return
 	}
-
-	config := getXenditConfig()
-	if config.APIKey == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Payment gateway not configured"})
-		return
-	}
-
-	// Create external ID for tracking
-	externalID := fmt.Sprintf("SUB-%s-%s-%d", tenantID[:8], req.Plan, time.Now().Unix())
 
 	// Calculate PPN 11%
 	ppnRate := 0.11
-	ppnAmount := price * ppnRate
-	totalAmount := price + ppnAmount
+	ppnAmount := basePrice * ppnRate
+	totalAmount := basePrice + ppnAmount
 
-	// Build Xendit invoice request
-	xenditReq := map[string]interface{}{
-		"external_id":      externalID,
-		"amount":           totalAmount,
-		"payer_email":      req.Email,
-		"description":      fmt.Sprintf("Warungin %s - Berlangganan Bulanan", getPlanDisplayName(req.Plan)),
-		"currency":         "IDR",
-		"invoice_duration": 86400, // 24 hours
-		"success_redirect_url": os.Getenv("FRONTEND_URL") + "/settings?payment=success",
-		"failure_redirect_url": os.Getenv("FRONTEND_URL") + "/settings?payment=failed",
-		"reminder_time":    1, // Send reminder 1 hour before expiry
-		"customer": map[string]interface{}{
-			"email": req.Email,
-		},
-		"items": []map[string]interface{}{
-			{
-				"name":     fmt.Sprintf("Warungin %s", getPlanDisplayName(req.Plan)),
-				"quantity": 1,
-				"price":    price,
-				"category": "Subscription",
-			},
-		},
-		"fees": []map[string]interface{}{
-			{
-				"type":  "PPN 11%",
-				"value": ppnAmount,
-			},
-		},
-		"metadata": map[string]interface{}{
-			"tenant_id": tenantID,
-			"plan":      req.Plan,
-		},
-	}
-
-	reqBody, _ := json.Marshal(xenditReq)
-
-	// Call Xendit API
-	httpReq, _ := http.NewRequest("POST", config.BaseURL+"/v2/invoices", bytes.NewBuffer(reqBody))
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(config.APIKey+":")))
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
+	// Get Doku config
+	config, err := getDokuConfig()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to payment gateway"})
-		return
-	}
-	defer resp.Body.Close()
-
-	var xenditResp map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&xenditResp)
-
-	if resp.StatusCode != 200 && resp.StatusCode != 201 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invoice creation failed", "details": xenditResp})
+		fmt.Printf("Doku config error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Payment gateway belum dikonfigurasi"})
 		return
 	}
 
-	// Extract invoice data
-	invoiceID, _ := xenditResp["id"].(string)
-	invoiceURL, _ := xenditResp["invoice_url"].(string)
-	status, _ := xenditResp["status"].(string)
-	expiryDateStr, _ := xenditResp["expiry_date"].(string)
-	
-	expiresAt, _ := time.Parse(time.RFC3339, expiryDateStr)
+	// Get B2B access token
+	accessToken, err := getB2BAccessToken(config)
+	if err != nil {
+		fmt.Printf("Doku token error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghubungi payment gateway"})
+		return
+	}
 
-	// Store invoice in database
-	tenantUUID, _ := uuid.Parse(tenantID)
+	// Create reference number
+	referenceNo := fmt.Sprintf("WSUB-%s-%s-%s-%d", tenantID[:8], req.Plan, req.BillingPeriod[:1], time.Now().Unix())
+
+	// Call Doku Generate QRIS
+	merchantID := config.ClientID
+	qrisReq := DokuQRISRequest{
+		PartnerReferenceNo: referenceNo,
+		Amount: DokuAmount{
+			Value:    fmt.Sprintf("%.2f", totalAmount),
+			Currency: "IDR",
+		},
+		MerchantID:     merchantID,
+		ValidityPeriod: "PT30M", // 30 minutes
+		AdditionalInfo: &DokuAdditional{
+			Description: fmt.Sprintf("Warungin %s - %s", getPlanDisplayName(req.Plan), getPeriodDisplayName(period)),
+		},
+	}
+
+	qrisResp, err := generateQRIS(config, accessToken, qrisReq)
+	if err != nil {
+		fmt.Printf("Doku QRIS generation error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat QRIS. Silakan coba lagi."})
+		return
+	}
+
+	// Store pending invoice in database
 	var subscription database.Subscription
 	h.db.Where("tenant_id = ?", tenantID).First(&subscription)
 
-	// Generate unique invoice number using external ID
-	invoiceNumber := fmt.Sprintf("INV-%s", externalID)
+	expiresAt := time.Now().Add(30 * time.Minute)
+	invoiceNumber := fmt.Sprintf("INV-%s", referenceNo)
 
 	invoice := database.Invoice{
 		SubscriptionID: subscription.ID,
 		InvoiceNumber:  invoiceNumber,
-		Amount:         totalAmount, // Total including PPN
+		Amount:         totalAmount,
 		Status:         "pending",
 		DueDate:        expiresAt,
-		PaymentRef:     invoiceID,
+		PaymentRef:     referenceNo,
+		BillingPeriod:  req.BillingPeriod,
 	}
 	h.db.Create(&invoice)
 
+	fmt.Printf("QRIS generated for tenant %s, plan %s (%s), amount Rp %.0f, ref: %s\n",
+		tenantID, req.Plan, req.BillingPeriod, totalAmount, referenceNo)
+
 	c.JSON(http.StatusOK, gin.H{
-		"data": InvoiceResponse{
-			InvoiceID:   invoiceID,
-			InvoiceURL:  invoiceURL,
-			ExternalID:  externalID,
-			Amount:      totalAmount, // Total including PPN
-			Status:      status,
+		"data": QRISSubscriptionResponse{
+			QRContent:   qrisResp.QRContent,
+			QRImageURL:  qrisResp.QRUrl,
+			Amount:      totalAmount,
+			BaseAmount:  basePrice,
+			PPNAmount:   ppnAmount,
 			ExpiresAt:   expiresAt,
-			Description: fmt.Sprintf("Warungin %s - Bulanan", getPlanDisplayName(req.Plan)),
-		},
-	})
-
-	_ = tenantUUID // Silence unused variable
-}
-
-// GetInvoiceStatus checks invoice status from Xendit
-func (h *Handler) GetInvoiceStatus(c *gin.Context) {
-	invoiceID := c.Param("invoice_id")
-
-	config := getXenditConfig()
-	if config.APIKey == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Payment gateway not configured"})
-		return
-	}
-
-	// Call Xendit API
-	httpReq, _ := http.NewRequest("GET", config.BaseURL+"/v2/invoices/"+invoiceID, nil)
-	httpReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(config.APIKey+":")))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check invoice status"})
-		return
-	}
-	defer resp.Body.Close()
-
-	var xenditResp map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&xenditResp)
-
-	status, _ := xenditResp["status"].(string)
-	paidAt, _ := xenditResp["paid_at"].(string)
-	paymentMethod, _ := xenditResp["payment_method"].(string)
-
-	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"invoice_id":     invoiceID,
-			"status":         status,
-			"paid_at":        paidAt,
-			"payment_method": paymentMethod,
+			ReferenceNo: referenceNo,
+			Plan:        req.Plan,
+			Period:      req.BillingPeriod,
 		},
 	})
 }
 
-// XenditWebhook handles Xendit invoice callbacks
-func (h *Handler) XenditWebhook(c *gin.Context) {
-	// Verify webhook token
-	config := getXenditConfig()
-	callbackToken := c.GetHeader("x-callback-token")
-	if config.WebhookToken != "" && callbackToken != config.WebhookToken {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid callback token"})
-		return
-	}
-
-	var notification map[string]interface{}
-	if err := c.ShouldBindJSON(&notification); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Log the webhook for debugging
-	fmt.Printf("Xendit Webhook: %+v\n", notification)
-
-	invoiceID, _ := notification["id"].(string)
-	externalID, _ := notification["external_id"].(string)
-	status, _ := notification["status"].(string)
-
-	// Parse tenant_id and plan from external_id (format: SUB-{tenant_id_prefix}-{plan}-{timestamp})
-	// Example: SUB-b89beb65-bisnis-1769014518
-	var tenantID, plan string
-	
-	// Try to get from metadata first (may not be available in webhook)
-	if metadata, ok := notification["metadata"].(map[string]interface{}); ok {
-		tenantID, _ = metadata["tenant_id"].(string)
-		plan, _ = metadata["plan"].(string)
-	}
-	
-	// If metadata not available, parse from external_id
-	if tenantID == "" || plan == "" {
-		// External ID format: SUB-{tenant_id_first_8_chars}-{plan}-{timestamp}
-		// We need to look up the full tenant_id from the invoice -> subscription
-		var inv database.Invoice
-		if err := h.db.Where("payment_ref = ?", invoiceID).First(&inv).Error; err == nil {
-			// Get tenant_id from subscription
-			var sub database.Subscription
-			if err := h.db.Where("id = ?", inv.SubscriptionID).First(&sub).Error; err == nil {
-				tenantID = sub.TenantID.String()
-				fmt.Printf("Found tenant_id from subscription: %s\n", tenantID)
-			} else {
-				fmt.Printf("Failed to find subscription for invoice: %v\n", err)
-			}
-		} else {
-			fmt.Printf("Failed to find invoice for payment_ref: %v\n", err)
-		}
-		
-		// Parse plan from external_id
-		parts := splitExternalID(externalID)
-		if len(parts) >= 3 {
-			plan = parts[2] // SUB-{prefix}-{plan}-{timestamp}
-		}
-	}
-	
-	fmt.Printf("Webhook Processing: status=%s, tenantID=%s, plan=%s\n", status, tenantID, plan)
+// CheckQRISStatus checks the payment status of a QRIS code
+func (h *Handler) CheckQRISStatus(c *gin.Context) {
+	reference := c.Param("reference")
 
 	// Find invoice
 	var invoice database.Invoice
-	if err := h.db.Where("payment_ref = ?", invoiceID).First(&invoice).Error; err != nil {
-		// Invoice not found, log but don't fail
-		fmt.Printf("Invoice not found for webhook: %s\n", invoiceID)
+	if err := h.db.Where("payment_ref = ?", reference).First(&invoice).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Referensi pembayaran tidak ditemukan"})
+		return
 	}
 
-	// Handle based on status
-	switch status {
-	case "PAID", "SETTLED":
-		// Update invoice
+	// If already paid, return immediately
+	if invoice.Status == "paid" {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":     "paid",
+				"paid_at":    invoice.PaidAt,
+				"reference":  reference,
+			},
+		})
+		return
+	}
+
+	// If expired, return
+	if time.Now().After(invoice.DueDate) {
+		invoice.Status = "expired"
+		h.db.Save(&invoice)
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":    "expired",
+				"reference": reference,
+			},
+		})
+		return
+	}
+
+	// Query Doku for live status
+	config, err := getDokuConfig()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":    invoice.Status,
+				"reference": reference,
+			},
+		})
+		return
+	}
+
+	accessToken, err := getB2BAccessToken(config)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":    invoice.Status,
+				"reference": reference,
+			},
+		})
+		return
+	}
+
+	queryReq := DokuQueryRequest{
+		OriginalPartnerReferenceNo: reference,
+		ServiceCode:                "47",
+	}
+
+	queryResp, err := queryQRISStatus(config, accessToken, queryReq)
+	if err != nil {
+		fmt.Printf("Doku query error: %v\n", err)
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":    invoice.Status,
+				"reference": reference,
+			},
+		})
+		return
+	}
+
+	// Check if paid (responseCode "00" = success)
+	if queryResp.LatestTransactionStatus == "00" {
+		// Payment confirmed!
 		invoice.Status = "paid"
 		invoice.PaidAt = timePtr(time.Now())
 		h.db.Save(&invoice)
 
-		// Upgrade subscription
-		if tenantID != "" && plan != "" {
-			if err := h.upgradeSubscription(tenantID, plan); err != nil {
-				fmt.Printf("Failed to upgrade subscription: %v\n", err)
-			} else {
-				fmt.Printf("Successfully upgraded subscription for tenant %s to plan %s\n", tenantID, plan)
-				
-				// Record affiliate commission if tenant has a referrer
-				h.recordAffiliateCommission(tenantID, plan, invoice.ID)
+		// Parse plan and period from reference
+		plan, period := parsePlanFromReference(reference)
+		if plan != "" {
+			// Get subscription to find tenant_id
+			var sub database.Subscription
+			if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&sub).Error; err == nil {
+				periodMonths := GetPeriodMonths(BillingPeriod(period))
+				if err := h.upgradeSubscription(sub.TenantID.String(), plan, periodMonths); err != nil {
+					fmt.Printf("Failed to upgrade subscription from status check: %v\n", err)
+				} else {
+					fmt.Printf("Subscription upgraded via status check for tenant %s\n", sub.TenantID)
+					// Record affiliate commission
+					pricing := PlanPrices[plan]
+					basePrice := pricing.GetPrice(BillingPeriod(period))
+					h.recordAffiliateCommission(sub.TenantID.String(), plan, basePrice, invoice.ID)
+				}
 			}
-		} else {
-			fmt.Printf("Warning: Could not upgrade subscription - missing tenantID or plan\n")
 		}
-		
-	case "EXPIRED":
-		invoice.Status = "voided"
-		h.db.Save(&invoice)
-		
-	case "PENDING":
-		invoice.Status = "pending"
-		h.db.Save(&invoice)
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":    "paid",
+				"paid_at":   invoice.PaidAt,
+				"reference": reference,
+			},
+		})
+		return
 	}
 
-	_ = externalID // Silence unused variable
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"status":    "pending",
+			"reference": reference,
+		},
+	})
+}
+
+// --- Doku Webhook ---
+
+// DokuWebhookNotification represents the webhook payload from Doku
+type DokuWebhookNotification struct {
+	OriginalPartnerReferenceNo string                 `json:"originalPartnerReferenceNo"`
+	OriginalReferenceNo        string                 `json:"originalReferenceNo"`
+	LatestTransactionStatus    string                 `json:"latestTransactionStatus"`
+	TransactionStatusDesc      string                 `json:"transactionStatusDesc"`
+	Amount                     DokuAmount             `json:"amount"`
+	AdditionalInfo             map[string]interface{} `json:"additionalInfo"`
+}
+
+// DokuWebhook handles Doku QRIS payment notifications
+func (h *Handler) DokuWebhook(c *gin.Context) {
+	// 1. Get Headers
+	signature := c.GetHeader("X-SIGNATURE")
+	timestamp := c.GetHeader("X-TIMESTAMP")
+	authHeader := c.GetHeader("Authorization") // Bearer <token>
+
+	if signature == "" || timestamp == "" || authHeader == "" {
+		fmt.Println("Doku Webhook Error: Missing required headers")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing required headers"})
+		return
+	}
+
+	// 2. Read Raw Body
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
+		fmt.Printf("Doku Webhook Error: Failed to read body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		return
+	}
+	bodyString := string(bodyBytes)
+
+	// Log for debugging
+	fmt.Printf("Doku Webhook Received:\nHeaders: Sig=%s, Time=%s\nBody: %s\n", signature, timestamp, bodyString)
+
+	// 3. Verify Signature
+	config, err := getDokuConfig()
+	if err != nil {
+		fmt.Printf("Doku Webhook Error: Config missing: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal configuration error"})
+		return
+	}
+
+	// Extract token (remove "Bearer " prefix)
+	accessToken := strings.TrimPrefix(authHeader, "Bearer ")
+
+	// Generate expected signature
+	// Note: The endpoint path must match exactly what Doku sees. 
+	// Usually it is the path from the domain root, e.g. /api/v1/webhook/doku
+	endpointPath := "/api/v1/webhook/doku" 
+	
+	expectedSignature := generateSymmetricSignature(
+		config.SecretKey,
+		"POST",
+		endpointPath,
+		accessToken,
+		bodyString,
+		timestamp,
+	)
+
+	if signature != expectedSignature {
+		fmt.Printf("Doku Webhook Error: Invalid signature.\nExpected: %s\nGot:      %s\n", expectedSignature, signature)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
+		return
+	}
+
+	// 4. Parse Body
+	var notification DokuWebhookNotification
+	if err := json.Unmarshal(bodyBytes, &notification); err != nil {
+		fmt.Printf("Doku Webhook Error: JSON parse error: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		return
+	}
+
+	fmt.Printf("Doku Webhook Validated: ref=%s, status=%s, desc=%s\n",
+		notification.OriginalPartnerReferenceNo,
+		notification.LatestTransactionStatus,
+		notification.TransactionStatusDesc,
+	)
+
+	referenceNo := notification.OriginalPartnerReferenceNo
+
+	// Find invoice by reference
+	var invoice database.Invoice
+	if err := h.db.Where("payment_ref = ?", referenceNo).First(&invoice).Error; err != nil {
+		fmt.Printf("Doku Webhook: Invoice not found for ref %s\n", referenceNo)
+		// Return 200 even if not found to stop Doku from retrying, as it's likely a bad reference or old test data
+		c.JSON(http.StatusOK, gin.H{"message": "OK"}) 
+		return
+	}
+
+	// Handle based on transaction status
+	switch notification.LatestTransactionStatus {
+	case "00": // Success
+		if invoice.Status == "paid" {
+			// Already processed — idempotent
+			c.JSON(http.StatusOK, gin.H{"message": "OK"})
+			return
+		}
+
+		invoice.Status = "paid"
+		invoice.PaidAt = timePtr(time.Now())
+		h.db.Save(&invoice)
+
+		// Get subscription for tenant_id
+		var subscription database.Subscription
+		if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&subscription).Error; err != nil {
+			fmt.Printf("Doku Webhook: Subscription not found for invoice %s\n", invoice.ID)
+			c.JSON(http.StatusOK, gin.H{"message": "OK"})
+			return
+		}
+
+		// Parse plan and period from reference
+		plan, period := parsePlanFromReference(referenceNo)
+		if plan == "" {
+			fmt.Printf("Doku Webhook: Could not parse plan from reference %s\n", referenceNo)
+			c.JSON(http.StatusOK, gin.H{"message": "OK"})
+			return
+		}
+
+		// Upgrade subscription
+		periodMonths := GetPeriodMonths(BillingPeriod(period))
+		if err := h.upgradeSubscription(subscription.TenantID.String(), plan, periodMonths); err != nil {
+			fmt.Printf("Doku Webhook: Failed to upgrade subscription: %v\n", err)
+		} else {
+			fmt.Printf("Doku Webhook: Successfully upgraded tenant %s to %s (%s)\n",
+				subscription.TenantID, plan, period)
+
+			// Record affiliate commission
+			pricing := PlanPrices[plan]
+			basePrice := pricing.GetPrice(BillingPeriod(period))
+			h.recordAffiliateCommission(subscription.TenantID.String(), plan, basePrice, invoice.ID)
+		}
+
+	case "05", "06": // Pending / In Progress
+		invoice.Status = "pending"
+		h.db.Save(&invoice)
+
+	default: // Failed / Expired
+		invoice.Status = "failed"
+		h.db.Save(&invoice)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "OK"})
 }
 
-// upgradeSubscription upgrades a tenant's subscription
-func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
+// WebhookVerify handles GET requests for webhook URL verification
+func (h *Handler) WebhookVerify(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "OK",
+		"message": "Webhook endpoint is active",
+		"service": "warungin",
+	})
+}
+
+// --- Subscription Upgrade ---
+
+// upgradeSubscription upgrades a tenant's subscription with the given billing period
+func (h *Handler) upgradeSubscription(tenantID string, plan string, periodMonths int) error {
 	var subscription database.Subscription
 	if err := h.db.Where("tenant_id = ?", tenantID).First(&subscription).Error; err != nil {
 		return err
@@ -365,26 +512,26 @@ func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
 		"pemula": {
 			MaxUsers:               3,
 			MaxProducts:            200,
-			MaxTransactionsDaily:   0, // Unlimited
-			MaxTransactionsMonthly: 0, // Unlimited
+			MaxTransactionsDaily:   0,
+			MaxTransactionsMonthly: 0,
 			MaxOutlets:             1,
 			DataRetentionDays:      365,
 		},
 		"bisnis": {
 			MaxUsers:               10,
-			MaxProducts:            0, // Unlimited
+			MaxProducts:            0,
 			MaxTransactionsDaily:   0,
 			MaxTransactionsMonthly: 0,
 			MaxOutlets:             3,
 			DataRetentionDays:      365 * 3,
 		},
 		"enterprise": {
-			MaxUsers:               0, // Unlimited
+			MaxUsers:               0,
 			MaxProducts:            0,
 			MaxTransactionsDaily:   0,
 			MaxTransactionsMonthly: 0,
-			MaxOutlets:             0, // Unlimited
-			DataRetentionDays:      0, // Forever
+			MaxOutlets:             0,
+			DataRetentionDays:      0,
 		},
 	}
 
@@ -393,25 +540,22 @@ func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
 		return fmt.Errorf("invalid plan: %s", plan)
 	}
 
-	// Get the first outlet for this tenant to migrate orphaned data
+	// Migrate orphaned data to first outlet
 	var firstOutlet database.Outlet
 	if err := h.db.Where("tenant_id = ?", tenantID).Order("created_at ASC").First(&firstOutlet).Error; err == nil {
-		// Migrate products with NULL outlet_id to first outlet
 		h.db.Model(&database.Product{}).
 			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
 			Update("outlet_id", firstOutlet.ID)
 
-		// Migrate materials with NULL outlet_id to first outlet
 		h.db.Model(&database.RawMaterial{}).
 			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
 			Update("outlet_id", firstOutlet.ID)
 
-		// Migrate users with NULL outlet_id to first outlet
 		h.db.Model(&database.User{}).
 			Where("tenant_id = ? AND outlet_id IS NULL", tenantID).
 			Update("outlet_id", firstOutlet.ID)
 
-		fmt.Printf("Migrated orphaned products/materials/users to outlet %s for tenant %s\n", firstOutlet.ID, tenantID)
+		fmt.Printf("Migrated orphaned data to outlet %s for tenant %s\n", firstOutlet.ID, tenantID)
 	}
 
 	subscription.Plan = plan
@@ -423,172 +567,104 @@ func (h *Handler) upgradeSubscription(tenantID string, plan string) error {
 	subscription.MaxOutlets = limits.MaxOutlets
 	subscription.DataRetentionDays = limits.DataRetentionDays
 	subscription.CurrentPeriodStart = time.Now()
-	subscription.CurrentPeriodEnd = time.Now().AddDate(0, 1, 0) // 1 month
+	subscription.CurrentPeriodEnd = time.Now().AddDate(0, periodMonths, 0)
+	subscription.BillingPeriod = string(getBillingPeriodFromMonths(periodMonths))
+	subscription.CancelledAt = nil
+	subscription.AutoRenew = true
 
 	return h.db.Save(&subscription).Error
 }
 
+// --- Affiliate Commission ---
+
 // recordAffiliateCommission records commission for affiliate if tenant has a referrer
-func (h *Handler) recordAffiliateCommission(tenantID string, plan string, invoiceID uuid.UUID) {
+func (h *Handler) recordAffiliateCommission(tenantID string, plan string, basePrice float64, invoiceID uuid.UUID) {
 	// Check if tenant has an affiliate
 	var affTenant database.AffiliateTenant
 	if err := h.db.Where("tenant_id = ?", tenantID).First(&affTenant).Error; err != nil {
-		// No affiliate for this tenant
 		return
 	}
 
 	tenantUUID, _ := uuid.Parse(tenantID)
 
-	// Check if commission already exists for this invoice or this month's subscription
+	// Check if commission already exists for this invoice
 	var existingEarning database.AffiliateEarning
-	thisMonth := time.Now().Format("2006-01")
-	
-	// If we have an invoice ID, check by invoice
 	if invoiceID != uuid.Nil {
 		if err := h.db.Where("tenant_id = ? AND invoice_id = ?", tenantUUID, invoiceID).First(&existingEarning).Error; err == nil {
-			fmt.Printf("Commission already exists for invoice %s, skipping\\n", invoiceID)
+			fmt.Printf("Commission already exists for invoice %s, skipping\n", invoiceID)
 			return
 		}
 	} else {
-		// Otherwise check if we already have a commission this month for this tenant
+		thisMonth := time.Now().Format("2006-01")
 		if err := h.db.Where("tenant_id = ? AND subscription_plan = ? AND created_at >= ?", tenantUUID, plan, thisMonth+"-01").First(&existingEarning).Error; err == nil {
-			fmt.Printf("Commission already exists for tenant %s this month, skipping\\n", tenantID)
+			fmt.Printf("Commission already exists for tenant %s this month, skipping\n", tenantID)
 			return
 		}
 	}
 
-	// Get subscription price (excluding PPN)
-	price, ok := PlanPrices[plan]
-	if !ok || price == 0 {
-		fmt.Printf("No price found for plan %s, skipping commission\\n", plan)
+	if basePrice == 0 {
+		fmt.Printf("No price for plan %s, skipping commission\n", plan)
 		return
 	}
 
-	// Calculate 10% commission
+	// Calculate 10% commission on base price (before PPN)
 	commissionRate := 10.0
-	commissionAmount := price * (commissionRate / 100)
+	commissionAmount := basePrice * (commissionRate / 100)
 
-	// Create earning record
 	earning := database.AffiliateEarning{
 		PortalUserID:      affTenant.PortalUserID,
 		TenantID:          tenantUUID,
 		InvoiceID:         invoiceID,
 		SubscriptionPlan:  plan,
-		SubscriptionPrice: price,
+		SubscriptionPrice: basePrice,
 		CommissionRate:    commissionRate,
 		CommissionAmount:  commissionAmount,
 		Status:            "pending",
 	}
 
 	if err := h.db.Create(&earning).Error; err != nil {
-		fmt.Printf("Failed to create affiliate earning: %v\\n", err)
+		fmt.Printf("Failed to create affiliate earning: %v\n", err)
 		return
 	}
 
-	// Update affiliator's pending payout
 	h.db.Model(&database.PortalUser{}).
 		Where("id = ?", affTenant.PortalUserID).
 		UpdateColumn("pending_payout", gorm.Expr("pending_payout + ?", commissionAmount))
 
-	fmt.Printf("Recorded affiliate commission: Rp %.0f for affiliator %s\\n", commissionAmount, affTenant.PortalUserID)
+	fmt.Printf("Recorded affiliate commission: Rp %.0f for affiliator %s\n", commissionAmount, affTenant.PortalUserID)
 }
 
-// RecordMissingCommissions checks for tenants with affiliates on paid plans who don't have commission recorded
-// This is meant to be called to fix historical data or as a scheduled job
+// RecordMissingCommissions checks for tenants with affiliates on paid plans without commission
 func (h *Handler) RecordMissingCommissions() {
 	fmt.Println("Checking for missing affiliate commissions...")
-	
-	// Find all affiliate tenants
+
 	var affTenants []database.AffiliateTenant
 	h.db.Preload("Tenant").Preload("Tenant.Subscription").Find(&affTenants)
-	
+
 	for _, affTenant := range affTenants {
 		if affTenant.Tenant.Subscription == nil {
 			continue
 		}
-		
+
 		plan := affTenant.Tenant.Subscription.Plan
 		if plan == "gratis" || plan == "" {
 			continue
 		}
-		
-		// Check if commission exists for this tenant's current plan
+
 		var existingEarning database.AffiliateEarning
 		if err := h.db.Where("tenant_id = ? AND subscription_plan = ?", affTenant.TenantID, plan).First(&existingEarning).Error; err != nil {
-			// No commission exists - create one
-			fmt.Printf("Creating missing commission for tenant %s on plan %s\\n", affTenant.TenantID, plan)
-			h.recordAffiliateCommission(affTenant.TenantID.String(), plan, uuid.Nil)
+			fmt.Printf("Creating missing commission for tenant %s on plan %s\n", affTenant.TenantID, plan)
+			pricing := PlanPrices[plan]
+			basePrice := pricing.Monthly // Use monthly as default for historical
+			h.recordAffiliateCommission(affTenant.TenantID.String(), plan, basePrice, uuid.Nil)
 		}
 	}
-	
+
 	fmt.Println("Finished checking for missing commissions")
 }
 
-// QRIS payment for POS transactions (keeping this for POS functionality)
-type CreateQRISRequest struct {
-	TransactionID string `json:"transaction_id" binding:"required"`
-}
+// --- Helper Functions ---
 
-type QRISResponse struct {
-	QRString    string    `json:"qr_string"`
-	QRImageURL  string    `json:"qr_image_url"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	OrderID     string    `json:"order_id"`
-	GrossAmount float64   `json:"gross_amount"`
-}
-
-// CreateQRIS creates a QRIS payment for a POS transaction
-// Note: This uses your own QRIS configuration, not Xendit
-func (h *Handler) CreateQRIS(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error":   "QRIS via Xendit not yet implemented",
-		"message": "Please use your own QRIS merchant for POS transactions. Xendit is used for subscription payments only.",
-	})
-}
-
-// CheckStatus checks payment status (legacy endpoint for compatibility)
-func (h *Handler) CheckStatus(c *gin.Context) {
-	orderID := c.Param("order_id")
-	
-	// Check if it's an invoice
-	if len(orderID) > 3 && orderID[:3] == "SUB" {
-		// It's a subscription invoice - redirect to invoice status
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Use /api/v1/payment/invoice/{invoice_id}/status for subscription payments",
-		})
-		return
-	}
-
-	// For POS transactions
-	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"order_id": orderID,
-			"status":   "please check via your merchant app",
-		},
-	})
-}
-
-// Webhook handles legacy webhook (redirects to XenditWebhook)
-func (h *Handler) Webhook(c *gin.Context) {
-	// Check if it's a Xendit callback
-	if c.GetHeader("x-callback-token") != "" {
-		h.XenditWebhook(c)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "OK"})
-}
-
-// WebhookVerify handles GET requests for webhook URL verification
-func (h *Handler) WebhookVerify(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "OK",
-		"message": "Webhook endpoint is active",
-		"service": "warungin",
-	})
-}
-
-// Helper functions
 func getPlanDisplayName(plan string) string {
 	names := map[string]string{
 		"gratis":     "Gratis",
@@ -602,56 +678,82 @@ func getPlanDisplayName(plan string) string {
 	return plan
 }
 
+func getPeriodDisplayName(period BillingPeriod) string {
+	names := map[BillingPeriod]string{
+		BillingMonthly:   "Bulanan",
+		BillingQuarterly: "3 Bulan",
+		BillingYearly:    "Tahunan",
+	}
+	if name, ok := names[period]; ok {
+		return name
+	}
+	return string(period)
+}
+
+func getBillingPeriodFromMonths(months int) BillingPeriod {
+	switch months {
+	case 3:
+		return BillingQuarterly
+	case 12:
+		return BillingYearly
+	default:
+		return BillingMonthly
+	}
+}
+
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
 
-// Helper to generate unique transaction ID
 func generateTransactionID() string {
 	return uuid.New().String()
 }
 
-// splitExternalID splits external_id into parts
-// Format: SUB-{tenant_prefix}-{plan}-{timestamp}
-func splitExternalID(externalID string) []string {
-	// Split by "-" but handle the case where there might be dashes in tenant ID
-	// Example: SUB-b89beb65-bisnis-1769014518
-	parts := make([]string, 0)
-	if len(externalID) < 4 || externalID[:4] != "SUB-" {
-		return parts
-	}
-	
-	remaining := externalID[4:] // Remove "SUB-"
-	parts = append(parts, "SUB")
-	
-	// Find the plan part (known values: gratis, pemula, bisnis, enterprise)
+// parsePlanFromReference extracts plan and period from reference number
+// Format: WSUB-{tenant_prefix}-{plan}-{period_initial}-{timestamp}
+// Example: WSUB-b89beb65-bisnis-q-1769014518
+func parsePlanFromReference(reference string) (plan string, period string) {
 	knownPlans := []string{"enterprise", "bisnis", "pemula", "gratis"}
-	for _, plan := range knownPlans {
-		if idx := findPlanIndex(remaining, plan); idx != -1 {
-			parts = append(parts, remaining[:idx-1]) // tenant prefix
-			parts = append(parts, plan)
-			if idx+len(plan) < len(remaining) {
-				parts = append(parts, remaining[idx+len(plan)+1:]) // timestamp
-			}
-			return parts
-		}
+	periodMap := map[string]string{
+		"m": "monthly",
+		"q": "quarterly",
+		"y": "yearly",
 	}
-	
-	return parts
-}
 
-// findPlanIndex finds the index of plan in the string
-func findPlanIndex(s, plan string) int {
-	for i := 0; i <= len(s)-len(plan); i++ {
-		if s[i:i+len(plan)] == plan {
-			// Check if it's bounded by dashes
-			beforeOK := i == 0 || s[i-1] == '-'
-			afterOK := i+len(plan) == len(s) || s[i+len(plan)] == '-'
-			if beforeOK && afterOK {
-				return i
+	for _, p := range knownPlans {
+		idx := -1
+		// Find the plan name in the reference
+		for i := 0; i <= len(reference)-len(p); i++ {
+			if reference[i:i+len(p)] == p {
+				// Check boundaries
+				beforeOK := i == 0 || reference[i-1] == '-'
+				afterOK := i+len(p) == len(reference) || reference[i+len(p)] == '-'
+				if beforeOK && afterOK {
+					idx = i
+					break
+				}
 			}
 		}
+		if idx != -1 {
+			plan = p
+			// Try to find period initial after plan
+			after := reference[idx+len(p):]
+			if len(after) >= 2 && after[0] == '-' {
+				periodInitial := string(after[1])
+				if fullPeriod, ok := periodMap[periodInitial]; ok {
+					period = fullPeriod
+				}
+			}
+			if period == "" {
+				period = "monthly"
+			}
+			return
+		}
 	}
-	return -1
+	return "", ""
 }
 
+// DokuNotifyBody is used to decode raw webhook body for signature verification
+type DokuNotifyBody struct {
+	Body json.RawMessage
+}
