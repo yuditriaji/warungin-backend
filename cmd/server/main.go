@@ -144,6 +144,13 @@ func main() {
 			protected.POST("/payment/subscription/qris", paymentHandler.CreateSubscriptionQRIS)
 			protected.GET("/payment/subscription/qris/:reference/status", paymentHandler.CheckQRISStatus)
 
+			// Payment routes (Doku VA)
+			protected.POST("/payment/subscription/va", paymentHandler.CreateSubscriptionVA)
+			protected.GET("/payment/subscription/va/:reference/status", paymentHandler.CheckVAStatus)
+
+			// Payment methods list
+			protected.GET("/payment/methods", paymentHandler.GetAvailablePaymentMethods)
+
 			// Cancel / Reactivate subscription
 			protected.POST("/subscription/cancel", subscriptionHandler.CancelSubscription)
 			protected.POST("/subscription/reactivate", subscriptionHandler.ReactivateSubscription)

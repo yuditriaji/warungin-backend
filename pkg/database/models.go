@@ -245,8 +245,10 @@ type Invoice struct {
 	Status         string     `gorm:"default:'pending'" json:"status"` // pending, paid, failed, expired
 	DueDate        time.Time  `json:"due_date"`
 	PaidAt         *time.Time `json:"paid_at"`
-	PaymentRef     string     `json:"payment_ref"`     // Doku payment reference
-	BillingPeriod  string     `json:"billing_period"`  // monthly, quarterly, yearly
+	PaymentRef     string     `json:"payment_ref"`      // Doku payment reference
+	BillingPeriod  string     `json:"billing_period"`    // monthly, quarterly, yearly
+	PaymentMethod  string     `gorm:"default:'qris'" json:"payment_method"` // qris, va_mandiri, va_bni, va_bri
+	VANumber       string     `json:"va_number"`         // Virtual Account number (for VA payments)
 }
 
 // EmployeeInvite represents pending employee invitations

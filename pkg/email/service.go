@@ -342,3 +342,102 @@ func (s *EmailService) SendCancellationConfirmationEmail(toEmail, userName, tena
 	subject := fmt.Sprintf("Konfirmasi pembatalan langganan Warungin %s", planName)
 	return s.SendEmail(toEmail, subject, htmlBody)
 }
+
+// SendPaymentSuccessEmail sends confirmation email after successful subscription payment
+func (s *EmailService) SendPaymentSuccessEmail(toEmail, userName, tenantName, planName, billingPeriod, invoiceNumber string, amount float64, expiryDate string) error {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "https://app.warungin.com"
+	}
+
+	// Format billing period display
+	periodDisplay := map[string]string{
+		"monthly":   "Bulanan",
+		"quarterly": "3 Bulan",
+		"yearly":    "Tahunan",
+	}[billingPeriod]
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+        <div style="background: linear-gradient(135deg, #16a34a 0%%, #22c55e 100%%); border-radius: 16px 16px 0 0; padding: 32px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">✅ Pembayaran Berhasil!</h1>
+        </div>
+        <div style="background: white; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <p style="color: #374151; font-size: 16px;">Hai <strong>%s</strong>,</p>
+            <p style="color: #374151; font-size: 16px;">Terima kasih! Pembayaran langganan <strong>Warungin %s</strong> untuk <strong>%s</strong> telah berhasil diproses.</p>
+            
+            <div style="background: #f0fdf4; border: 2px solid #22c55e; border-radius: 12px; padding: 20px; margin: 24px 0;">
+                <h3 style="color: #166534; margin: 0 0 16px 0; font-size: 18px;">Detail Pembayaran</h3>
+                <table style="width: 100%%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Nomor Invoice:</td>
+                        <td style="padding: 8px 0; color: #374151; font-size: 14px; font-weight: bold; text-align: right;">%s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Paket:</td>
+                        <td style="padding: 8px 0; color: #374151; font-size: 14px; font-weight: bold; text-align: right;">%s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Periode:</td>
+                        <td style="padding: 8px 0; color: #374151; font-size: 14px; font-weight: bold; text-align: right;">%s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Total Dibayar:</td>
+                        <td style="padding: 8px 0; color: #16a34a; font-size: 18px; font-weight: bold; text-align: right;">Rp %s</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Berlaku Hingga:</td>
+                        <td style="padding: 8px 0; color: #374151; font-size: 14px; font-weight: bold; text-align: right;">%s</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 16px; margin: 20px 0;">
+                <p style="color: #1e40af; margin: 0; font-size: 14px;">🎉 Akun Anda sekarang memiliki akses penuh ke semua fitur %s!</p>
+            </div>
+
+            <div style="text-align: center; margin: 32px 0;">
+                <a href="%s/dashboard" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%%, #a855f7 100%%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: bold; font-size: 16px;">Buka Dashboard</a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
+            
+            <p style="color: #6b7280; font-size: 14px; margin: 16px 0;">Butuh bantuan? Hubungi kami di <a href="mailto:support@warungin.com" style="color: #7c3aed;">support@warungin.com</a></p>
+            
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">© 2024 Warungin. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+`, userName, planName, tenantName, invoiceNumber, planName, periodDisplay, formatCurrency(amount), expiryDate, planName, frontendURL)
+
+	subject := fmt.Sprintf("✅ Pembayaran Warungin %s Berhasil - %s", planName, invoiceNumber)
+	return s.SendEmail(toEmail, subject, htmlBody)
+}
+
+// formatCurrency formats a float64 amount to Indonesian currency format
+func formatCurrency(amount float64) string {
+	// Simple formatting: add thousand separators
+	intAmount := int(amount)
+	str := fmt.Sprintf("%d", intAmount)
+	
+	// Add thousand separators
+	n := len(str)
+	if n <= 3 {
+		return str
+	}
+	
+	result := ""
+	for i, digit := range str {
+		if i > 0 && (n-i)%3 == 0 {
+			result += "."
+		}
+		result += string(digit)
+	}
+	
+	return result
+}
