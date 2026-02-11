@@ -917,7 +917,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 
 	// Expiry: 24 hours for VA
 	expiresAt := time.Now().Add(24 * time.Hour)
-	expiryISO := expiresAt.Format("2006-01-02T15:04:05+07:00")
+	expiryISO := expiresAt.In(jakartaLoc).Format("2006-01-02T15:04:05+07:00")
 
 	// Build VA request
 	vaReq := DokuVARequest{

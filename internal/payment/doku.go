@@ -34,7 +34,22 @@ var (
 	cachedToken string
 	tokenExpiry time.Time
 	tokenMutex  sync.Mutex
+	jakartaLoc  *time.Location
 )
+
+func init() {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		// Fallback: manually create +07:00 fixed zone
+		loc = time.FixedZone("WIB", 7*60*60)
+	}
+	jakartaLoc = loc
+}
+
+// jakartaTimestamp returns current time formatted for Doku API in WIB (+07:00)
+func jakartaTimestamp() string {
+	return time.Now().In(jakartaLoc).Format("2006-01-02T15:04:05+07:00")
+}
 
 // getDokuConfig reads Doku configuration from environment variables
 func getDokuConfig() (*DokuConfig, error) {
@@ -143,7 +158,7 @@ func getB2BAccessToken(config *DokuConfig) (string, error) {
 		return cachedToken, nil
 	}
 
-	timestamp := time.Now().Format("2006-01-02T15:04:05+07:00")
+	timestamp := jakartaTimestamp()
 
 	// Generate asymmetric signature
 	signature, err := generateAsymmetricSignature(config.PrivateKey, config.ClientID, timestamp)
@@ -239,7 +254,7 @@ func generateQRIS(config *DokuConfig, accessToken string, req DokuQRISRequest) (
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	timestamp := time.Now().Format("2006-01-02T15:04:05+07:00")
+	timestamp := jakartaTimestamp()
 	externalID := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	// Generate symmetric signature
@@ -312,7 +327,7 @@ func queryQRISStatus(config *DokuConfig, accessToken string, req DokuQueryReques
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	timestamp := time.Now().Format("2006-01-02T15:04:05+07:00")
+	timestamp := jakartaTimestamp()
 	externalID := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	signature := generateSymmetricSignature(

@@ -120,7 +120,7 @@ func generateVA(config *DokuConfig, accessToken string, req DokuVARequest) (*Dok
 		return nil, fmt.Errorf("failed to marshal VA request: %v", err)
 	}
 
-	timestamp := time.Now().Format("2006-01-02T15:04:05+07:00")
+	timestamp := jakartaTimestamp()
 	externalID := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	// Generate symmetric signature
@@ -183,7 +183,7 @@ func queryVAStatus(config *DokuConfig, accessToken string, req DokuVAStatusReque
 		return nil, fmt.Errorf("failed to marshal VA status request: %v", err)
 	}
 
-	timestamp := time.Now().Format("2006-01-02T15:04:05+07:00")
+	timestamp := jakartaTimestamp()
 	externalID := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	signature := generateSymmetricSignature(
