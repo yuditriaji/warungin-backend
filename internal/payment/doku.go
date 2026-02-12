@@ -57,12 +57,18 @@ func getDokuConfig() (*DokuConfig, error) {
 	secretKey := os.Getenv("DOKU_SECRET_KEY")
 	baseURL := os.Getenv("DOKU_BASE_URL")
 
+	// Trim whitespace from credentials
+	clientID = strings.TrimSpace(clientID)
+	secretKey = strings.TrimSpace(secretKey)
+
 	if clientID == "" || secretKey == "" {
 		return nil, fmt.Errorf("DOKU_CLIENT_ID and DOKU_SECRET_KEY must be set")
 	}
 
 	if baseURL == "" {
 		baseURL = "https://api-sandbox.doku.com"
+	} else {
+		baseURL = strings.TrimSuffix(baseURL, "/")
 	}
 
 	// Load RSA private key for asymmetric signature (token request)
@@ -123,6 +129,9 @@ func generateAsymmetricSignature(privateKey *rsa.PrivateKey, clientID, timestamp
 
 	stringToSign := clientID + "|" + timestamp
 
+	// Log StringToSign for debugging
+	fmt.Printf("Doku Asymmetric Signature Debug:\nString: %s\n", stringToSign)
+
 	hash := sha256.Sum256([]byte(stringToSign))
 	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hash[:])
 	if err != nil {
@@ -144,8 +153,12 @@ func generateSymmetricSignature(secretKey, httpMethod, endpointURL, accessToken,
 	mac := hmac.New(sha512.New, []byte(secretKey))
 	mac.Write([]byte(stringToSign))
 	signature := mac.Sum(nil)
+	encodedSignature := base64.StdEncoding.EncodeToString(signature)
 
-	return base64.StdEncoding.EncodeToString(signature)
+	// Log signature components for debugging
+	fmt.Printf("Doku Signature Debug:\nString: %s\nSig: %s\n", stringToSign, encodedSignature)
+
+	return encodedSignature
 }
 
 // getB2BAccessToken obtains or returns cached Doku B2B access token
