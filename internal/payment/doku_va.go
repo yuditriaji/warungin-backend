@@ -136,6 +136,8 @@ func generateVA(config *DokuConfig, accessToken string, req DokuVARequest) (*Dok
 		timestamp,
 	)
 
+	fmt.Printf("Doku VA Request JSON: %s\n", string(reqJSON))
+
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VA request: %v", err)
