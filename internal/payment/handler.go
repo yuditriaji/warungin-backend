@@ -948,6 +948,12 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		},
 	}
 
+	// For Mandiri with DGPC (Direct Generated Payment Code), try omitting VirtualAccountNo
+	// to let Doku generate it.
+	if req.BankCode == "mandiri" {
+		vaReq.VirtualAccountNo = ""
+	}
+
 	vaResp, err := generateVA(config, accessToken, vaReq)
 	if err != nil {
 		fmt.Printf("Doku VA generation error: %v\n", err)

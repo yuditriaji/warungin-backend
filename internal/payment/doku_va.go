@@ -52,7 +52,7 @@ var VABanks = map[string]VABankConfig{
 type DokuVARequest struct {
 	PartnerServiceID   string           `json:"partnerServiceId"`
 	CustomerNo         string           `json:"customerNo"`
-	VirtualAccountNo   string           `json:"virtualAccountNo"`
+	VirtualAccountNo   string           `json:"virtualAccountNo,omitempty"`
 	VirtualAccountName string           `json:"virtualAccountName"`
 	TrxID              string           `json:"trxId"`
 	TotalAmount        DokuAmount       `json:"totalAmount"`
