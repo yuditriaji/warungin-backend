@@ -28,19 +28,19 @@ type VABankConfig struct {
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "86188", // From screenshot
+		PartnerServiceID: "   86188", // Left-padded with spaces to 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "8810", // Common Doku Aggregator ID for BNI
+		PartnerServiceID: "    8810", // Left-padded with spaces to 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "3496", // Common Doku Aggregator ID for BRI
+		PartnerServiceID: "    3496", // Left-padded with spaces to 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BRI",
 		DisplayName:      "Bank BRI",
 	},
