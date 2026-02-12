@@ -15,25 +15,33 @@ import (
 type VABankConfig struct {
 	Code             string // "MANDIRI", "BNI", "BRI"
 	PartnerServiceID string // Bank-specific prefix
+	ChannelID        string // Channel identifier for Doku API
 	DisplayName      string // User-facing bank name
 }
 
 // VABanks maps bank codes to their configurations
-// PartnerServiceID must be 8 characters, left-padded with spaces
+// Note: PartnerServiceID values must be verified against your Doku merchant configuration.
+// Doku assigns specific partnerServiceId values per merchant per bank.
+// VABanks maps bank codes to their configurations
+// Note: PartnerServiceID values must be verified against your Doku merchant configuration.
+// For Aggregator model, these are typically provided by Doku.
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "     008", // 5 spaces + 008
+		PartnerServiceID: "86188", // From screenshot
+		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "     009", // 5 spaces + 009
+		PartnerServiceID: "8810", // Common Doku Aggregator ID for BNI
+		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "     002", // 5 spaces + 002
+		PartnerServiceID: "3496", // Common Doku Aggregator ID for BRI
+		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BRI",
 		DisplayName:      "Bank BRI",
 	},
 }
@@ -53,6 +61,7 @@ type DokuVARequest struct {
 
 // DokuVAAdditional holds additional info for VA creation
 type DokuVAAdditional struct {
+	Channel                   string `json:"channel,omitempty"`
 	VirtualAccountTrxType     string `json:"virtualAccountTrxType,omitempty"` // "C" = Close Amount, "O" = Open Amount
 	VirtualAccountExpiredDate string `json:"expiredDate,omitempty"`           // ISO8601 format
 }
@@ -138,31 +147,7 @@ func generateVA(config *DokuConfig, accessToken string, req DokuVARequest) (*Dok
 	httpReq.Header.Set("X-EXTERNAL-ID", externalID)
 	httpReq.Header.Set("X-TIMESTAMP", timestamp)
 	httpReq.Header.Set("X-SIGNATURE", signature)
-// CreateSubscriptionVA generates a Doku Virtual Account for subscription payment
-func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
-	// ... (code omitted)
-
-	// Build VA request
-	vaReq := DokuVARequest{
-		PartnerServiceID:   bankConfig.PartnerServiceID,
-		CustomerNo:         customerNo,
-		VirtualAccountNo:   vaNumber,
-		VirtualAccountName: fmt.Sprintf("Warungin %s", getPlanDisplayName(req.Plan)),
-		TrxID:              trxID,
-		TotalAmount: DokuAmount{
-			Value:    fmt.Sprintf("%.2f", totalAmount),
-			Currency: "IDR",
-		},
-		AdditionalInfo: &DokuVAAdditional{
-			// Channel removed
-			VirtualAccountTrxType:     "C", // Close Amount
-			VirtualAccountExpiredDate: expiryISO,
-		},
-	}
-
-	vaResp, err := generateVA(config, accessToken, vaReq)
-	// ... (code omitted)
-}
+	httpReq.Header.Set("CHANNEL-ID", req.AdditionalInfo.Channel)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(httpReq)
