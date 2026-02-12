@@ -28,7 +28,7 @@ type VABankConfig struct {
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "   86188", // Left-padded with spaces to 8 chars
+		PartnerServiceID: "  861880", // Merchant BIN from screenshot, padded to 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
