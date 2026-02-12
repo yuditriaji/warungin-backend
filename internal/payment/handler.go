@@ -898,20 +898,26 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	// Create reference number (trxId)
 	trxID := fmt.Sprintf("WSUB-%s-%s-%s-%d", tenantID[:8], req.Plan, req.BillingPeriod[:1], time.Now().Unix())
 
-	// Generate customer number: use last 8 chars of tenant ID + unix timestamp modulo
-	// Total customerNo should be max 20 chars
-	tenantSuffix := tenantID
-	if len(tenantSuffix) > 8 {
-		tenantSuffix = tenantSuffix[len(tenantSuffix)-8:]
-	}
-	// Remove hyphens from tenant suffix
-	cleanSuffix := ""
-	for _, ch := range tenantSuffix {
-		if ch != '-' {
-			cleanSuffix += string(ch)
-		}
-	}
-	customerNo := fmt.Sprintf("%s%d", cleanSuffix, time.Now().Unix()%100000)
+	// Generate customer number
+	// Mandiri VA format: 8808 + 8 digits MerchantCode + CustomerNo (Total max ?)
+	// Actually for Doku Aggregator:
+	// PartnerID is fixed (e.g. 86188)
+	// VirtualAccountNo = PartnerID + CustomerNo
+	
+	// Doku Requirement: PartnerServiceID must be 8 chars for Mandiri (left padded with space if needed)
+	// But our screenshot showed "86188" without spaces.
+	// Let's follow the error "Invalid Field Format {customerNo, partnerServiceId, virtualAccountNo}"
+	// This usually means length or content type (numeric) is wrong.
+	
+	// Fix 1: PartnerServiceID must be 8 chars for Mandiri?
+	// Actually, for aggregator, it might be just the 5 digits.
+	// BUT, CustomerNo MUST be numeric only.
+	// Our previous CustomerNo was "7981fe4c20652" (alphanumeric due to hex/uuid parts).
+	// Mandiri VA (and most VAs) requires NUMERIC ONLY.
+	
+	// Generate strictly numeric CustomerNo
+	// Use: last 8 digits of timestamp + random 4 digits
+	customerNo := fmt.Sprintf("%012d", time.Now().UnixNano()%1000000000000)
 
 	// Full VA number = partnerServiceId + customerNo
 	vaNumber := bankConfig.PartnerServiceID + customerNo
@@ -922,7 +928,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 
 	// Build VA request
 	vaReq := DokuVARequest{
-		PartnerServiceID:   bankConfig.PartnerServiceID,
+		PartnerServiceID:   bankConfig.PartnerServiceID, // Keep as is for now, fix CustomerNo first
 		CustomerNo:         customerNo,
 		VirtualAccountNo:   vaNumber,
 		VirtualAccountName: fmt.Sprintf("Warungin %s", getPlanDisplayName(req.Plan)),
