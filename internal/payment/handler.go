@@ -931,7 +931,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 			Currency: "IDR",
 		},
 		AdditionalInfo: &DokuVAAdditional{
-			Channel:                   bankConfig.ChannelID,
+
 			VirtualAccountTrxType:     "C", // Close Amount
 			VirtualAccountExpiredDate: expiryISO,
 		},
