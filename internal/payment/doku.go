@@ -47,7 +47,28 @@ func init() {
 }
 
 // jakartaTimestamp returns current time formatted for Doku API in WIB (+07:00)
+// Uses Google's server time to avoid local clock drift
 func jakartaTimestamp() string {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // Don't follow redirects, just need headers
+		},
+	}
+
+	resp, err := client.Head("https://www.google.com")
+	if err == nil {
+		defer resp.Body.Close()
+		if dateStr := resp.Header.Get("Date"); dateStr != "" {
+			// Parse Date header: "Mon, 02 Jan 2006 15:04:05 GMT"
+			if t, err := time.Parse(time.RFC1123, dateStr); err == nil {
+				return t.In(jakartaLoc).Format("2006-01-02T15:04:05+07:00")
+			}
+		}
+	}
+
+	// Fallback to local time if HTTP check fails
+	fmt.Printf("Doku Time Sync Warning: Google time check failed: %v. Using local time.\n", err)
 	return time.Now().In(jakartaLoc).Format("2006-01-02T15:04:05+07:00")
 }
 
