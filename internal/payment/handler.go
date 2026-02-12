@@ -918,10 +918,10 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	// Generate strictly numeric CustomerNo
 	// Use: last 8 digits of timestamp + random 4 digits
 	// Update: Found "Prefix Customer No: 0" and "Merchant BIN: 861880" in dashboard.
-	// This implies CustomerNo MUST start with '0'.
-	// Fixed length to 12 digits (starting with 0).
-	// PartnerID (8) + CustomerNo (12) = 20 chars total.
-	customerNo := fmt.Sprintf("0%011d", time.Now().UnixNano()%100000000000)
+	// But previous "Start with 0" with padded PartnerID failed.
+	// Let's try simpler: PartnerID(5) + CustomerNo(min?).
+	// Try 8 digits numeric customerNo.
+	customerNo := fmt.Sprintf("%08d", time.Now().UnixNano()%100000000)
 
 	// Full VA number = partnerServiceId + customerNo
 	vaNumber := bankConfig.PartnerServiceID + customerNo
@@ -948,11 +948,9 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		},
 	}
 
-	// For Mandiri with DGPC (Direct Generated Payment Code), try omitting VirtualAccountNo
-	// to let Doku generate it.
-	if req.BankCode == "mandiri" {
-		vaReq.VirtualAccountNo = ""
-	}
+	// Previously tried omitting VirtualAccountNo for DGPC, but failed with "Transaction Not Permitted".
+	// Reverting to sending explicit VirtualAccountNo.
+	// Ensure PartnerServiceID and CustomerNo are correct.
 
 	vaResp, err := generateVA(config, accessToken, vaReq)
 	if err != nil {

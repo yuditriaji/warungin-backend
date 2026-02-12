@@ -28,7 +28,7 @@ type VABankConfig struct {
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "   86188", // Back to 86188 (padded), relying on CustomerNo '0' prefix fix
+		PartnerServiceID: "86188", // Unpadded as per standard sandbox behavior
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
