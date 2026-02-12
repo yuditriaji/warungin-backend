@@ -110,6 +110,15 @@ func getDokuConfig() (*DokuConfig, error) {
 			}
 			privateKey = rsaKey
 		}
+
+		// Debug: Log Public Key Modulus Prefix to verify correct key is loaded
+		if privateKey != nil {
+			pub := privateKey.Public().(*rsa.PublicKey)
+			modulus := pub.N.Bytes()
+			if len(modulus) > 10 {
+				fmt.Printf("Doku Config Loaded. Key Modulus Prefix: %X...\n", modulus[:10])
+			}
+		}
 	}
 
 	return &DokuConfig{
@@ -195,6 +204,9 @@ func getB2BAccessToken(config *DokuConfig) (string, error) {
 	httpReq.Header.Set("X-CLIENT-KEY", config.ClientID)
 	httpReq.Header.Set("X-TIMESTAMP", timestamp)
 	httpReq.Header.Set("X-SIGNATURE", signature)
+
+	// Debug headers
+	fmt.Printf("Doku Token Request Headers:\nX-CLIENT-KEY: %s\nX-TIMESTAMP: %s\nX-SIGNATURE: %s\n", config.ClientID, timestamp, signature)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(httpReq)
