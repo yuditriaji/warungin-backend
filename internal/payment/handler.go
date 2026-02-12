@@ -917,7 +917,11 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	
 	// Generate strictly numeric CustomerNo
 	// Use: last 8 digits of timestamp + random 4 digits
-	customerNo := fmt.Sprintf("%012d", time.Now().UnixNano()%1000000000000)
+	// Update: Found "Prefix Customer No: 0" and "Merchant BIN: 861880" in dashboard.
+	// This implies CustomerNo MUST start with '0'.
+	// Fixed length to 12 digits (starting with 0).
+	// PartnerID (8) + CustomerNo (12) = 20 chars total.
+	customerNo := fmt.Sprintf("0%011d", time.Now().UnixNano()%100000000000)
 
 	// Full VA number = partnerServiceId + customerNo
 	vaNumber := bankConfig.PartnerServiceID + customerNo
