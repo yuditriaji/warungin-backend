@@ -852,6 +852,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bank tidak valid. Pilih: mandiri, bni, bri"})
 		return
 	}
+	fmt.Printf("DEBUG VA: BankCode=%s, PartnerID=%s, ChannelID=%s\n", req.BankCode, bankConfig.PartnerServiceID, bankConfig.ChannelID)
 
 	// Validate billing period
 	if !ValidBillingPeriod(req.BillingPeriod) {
@@ -931,7 +932,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 			Currency: "IDR",
 		},
 		AdditionalInfo: &DokuVAAdditional{
-
+			Channel:                   bankConfig.ChannelID,
 			VirtualAccountTrxType:     "C", // Close Amount
 			VirtualAccountExpiredDate: expiryISO,
 		},

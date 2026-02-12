@@ -61,7 +61,7 @@ type DokuVARequest struct {
 
 // DokuVAAdditional holds additional info for VA creation
 type DokuVAAdditional struct {
-	Channel                   string `json:"channel,omitempty"`
+	Channel                   string `json:"channel"`
 	VirtualAccountTrxType     string `json:"virtualAccountTrxType,omitempty"` // "C" = Close Amount, "O" = Open Amount
 	VirtualAccountExpiredDate string `json:"expiredDate,omitempty"`           // ISO8601 format
 }
