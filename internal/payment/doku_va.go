@@ -28,19 +28,19 @@ type VABankConfig struct {
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "86188", // Unpadded as per standard sandbox behavior
+		PartnerServiceID: "   86188", // 3 spaces + 5 digits = 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "    8810", // Left-padded with spaces to 8 chars
+		PartnerServiceID: "    8810", // 4 spaces + 4 digits = 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "    3496", // Left-padded with spaces to 8 chars
+		PartnerServiceID: "    3496", // 4 spaces + 4 digits = 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BRI",
 		DisplayName:      "Bank BRI",
 	},
