@@ -28,7 +28,7 @@ type VABankConfig struct {
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "   86188", // 3 spaces + 5 digits = 8 chars
+		PartnerServiceID: "  861880", // Merchant BIN from screenshot, padded to 8 chars
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
@@ -50,20 +50,20 @@ var VABanks = map[string]VABankConfig{
 
 // DokuVARequest is the request body for creating a Virtual Account
 type DokuVARequest struct {
-	PartnerServiceID   string           `json:"partnerServiceId"`
-	CustomerNo         string           `json:"customerNo"`
-	VirtualAccountNo   string           `json:"virtualAccountNo,omitempty"`
-	VirtualAccountName string           `json:"virtualAccountName"`
-	TrxID              string           `json:"trxId"`
-	TotalAmount        DokuAmount       `json:"totalAmount"`
-	AdditionalInfo     *DokuVAAdditional `json:"additionalInfo,omitempty"`
+	PartnerServiceID      string           `json:"partnerServiceId"`
+	CustomerNo            string           `json:"customerNo"`
+	VirtualAccountNo      string           `json:"virtualAccountNo,omitempty"`
+	VirtualAccountName    string           `json:"virtualAccountName"`
+	VirtualAccountTrxType string           `json:"virtualAccountTrxType,omitempty"` // Moved to root
+	ExpiredDate           string           `json:"expiredDate,omitempty"`           // Moved to root
+	TrxID                 string           `json:"trxId"`
+	TotalAmount           DokuAmount       `json:"totalAmount"`
+	AdditionalInfo        *DokuVAAdditional `json:"additionalInfo,omitempty"`
 }
 
 // DokuVAAdditional holds additional info for VA creation
 type DokuVAAdditional struct {
-	Channel                   string `json:"channel"`
-	VirtualAccountTrxType     string `json:"virtualAccountTrxType,omitempty"` // "C" = Close Amount, "O" = Open Amount
-	VirtualAccountExpiredDate string `json:"expiredDate,omitempty"`           // ISO8601 format
+	Channel string `json:"channel"`
 }
 
 // DokuVAResponse is the response from VA creation

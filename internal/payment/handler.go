@@ -932,19 +932,16 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 
 	// Build VA request
 	vaReq := DokuVARequest{
-		PartnerServiceID:   bankConfig.PartnerServiceID, // Keep as is for now, fix CustomerNo first
-		CustomerNo:         customerNo,
-		VirtualAccountNo:   vaNumber,
-		VirtualAccountName: fmt.Sprintf("Warungin %s", getPlanDisplayName(req.Plan)),
-		TrxID:              trxID,
-		TotalAmount: DokuAmount{
-			Value:    fmt.Sprintf("%.2f", totalAmount),
-			Currency: "IDR",
-		},
+		PartnerServiceID:      bankConfig.PartnerServiceID, // Keep as is for now, fix CustomerNo first
+		CustomerNo:            customerNo,
+		VirtualAccountNo:      vaNumber,
+		VirtualAccountName:    fmt.Sprintf("Warungin %s", getPlanDisplayName(req.Plan)),
+		TrxID:                 trxID,
+		TotalAmount:           DokuAmount{Value: fmt.Sprintf("%.2f", totalAmount), Currency: "IDR"},
+		VirtualAccountTrxType: "C",       // Closed payment (Moved to root)
+		ExpiredDate:           expiryISO, // Moved to root
 		AdditionalInfo: &DokuVAAdditional{
-			Channel:                   bankConfig.ChannelID,
-			VirtualAccountTrxType:     "C", // Close Amount
-			VirtualAccountExpiredDate: expiryISO,
+			Channel: bankConfig.ChannelID,
 		},
 	}
 
