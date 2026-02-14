@@ -14,33 +14,34 @@ import (
 // VABankConfig holds configuration for each VA bank
 type VABankConfig struct {
 	Code             string // "MANDIRI", "BNI", "BRI"
-	PartnerServiceID string // Bank-specific prefix
+	PartnerServiceID string // Bank-specific prefix (padded)
+	CustomerPrefix   string // Prefix required by Doku
 	ChannelID        string // Channel identifier for Doku API
 	DisplayName      string // User-facing bank name
 }
 
 // VABanks maps bank codes to their configurations
 // Note: PartnerServiceID values must be verified against your Doku merchant configuration.
-// Doku assigns specific partnerServiceId values per merchant per bank.
-// VABanks maps bank codes to their configurations
-// Note: PartnerServiceID values must be verified against your Doku merchant configuration.
 // For Aggregator model, these are typically provided by Doku.
 var VABanks = map[string]VABankConfig{
 	"mandiri": {
 		Code:             "MANDIRI",
-		PartnerServiceID: "  861880", // Merchant BIN from screenshot, padded to 8 chars
+		PartnerServiceID: "  861880", // Merchant BIN from dashboard (padded to 8 chars)
+		CustomerPrefix:   "0",       // Required Prefix
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_MANDIRI",
 		DisplayName:      "Bank Mandiri",
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "    8810", // 4 spaces + 4 digits = 8 chars
+		PartnerServiceID: "   84923", // Merchant BIN 84923 (padded to 8 chars)
+		CustomerPrefix:   "3",       // Required Prefix
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "    3496", // 4 spaces + 4 digits = 8 chars
+		PartnerServiceID: "  139256", // Merchant BIN 139256 (padded to 8 chars)
+		CustomerPrefix:   "6",       // Required Prefix
 		ChannelID:        "VIRTUAL_ACCOUNT_BANK_BRI",
 		DisplayName:      "Bank BRI",
 	},

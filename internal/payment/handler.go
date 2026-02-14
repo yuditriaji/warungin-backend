@@ -916,12 +916,10 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	// Mandiri VA (and most VAs) requires NUMERIC ONLY.
 	
 	// Generate strictly numeric CustomerNo
-	// Use: last 8 digits of timestamp + random 4 digits
-	// Update: Found "Prefix Customer No: 0" and "Merchant BIN: 861880" in dashboard.
-	// But previous "Start with 0" with padded PartnerID failed.
-	// Let's try simpler: PartnerID(5) + CustomerNo(min?).
-	// Try 8 digits numeric customerNo.
-	customerNo := fmt.Sprintf("%08d", time.Now().UnixNano()%100000000)
+	// Use: Bank Prefix + last 11 digits of timestamp/modulo
+	// Fixed length to 12 digits (Prefix + 11 digits).
+	// PartnerID (8) + CustomerNo (12) = 20 chars total.
+	customerNo := fmt.Sprintf("%s%011d", bankConfig.CustomerPrefix, time.Now().UnixNano()%100000000000)
 
 	// Full VA number = partnerServiceId + customerNo
 	vaNumber := bankConfig.PartnerServiceID + customerNo
