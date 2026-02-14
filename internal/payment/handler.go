@@ -916,10 +916,9 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	// Mandiri VA (and most VAs) requires NUMERIC ONLY.
 	
 	// Generate strictly numeric CustomerNo
-	// Use: Bank Prefix + last 11 digits of timestamp/modulo
-	// Fixed length to 12 digits (Prefix + 11 digits).
-	// PartnerID (8) + CustomerNo (12) = 20 chars total.
-	customerNo := fmt.Sprintf("%s%011d", bankConfig.CustomerPrefix, time.Now().UnixNano()%100000000000)
+	// Use: Bank Prefix + last 7 digits of timestamp/modulo to keep total length short (approx 12-14 digits total VA)
+	// This ensures we stay within standard 16-digit limit even with prefixes.
+	customerNo := fmt.Sprintf("%s%07d", bankConfig.CustomerPrefix, time.Now().UnixNano()%10000000)
 
 	// Full VA number = partnerServiceId + customerNo
 	vaNumber := bankConfig.PartnerServiceID + customerNo
