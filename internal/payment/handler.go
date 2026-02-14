@@ -940,6 +940,9 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		ExpiredDate:           expiryISO, // Moved to root
 		AdditionalInfo: &DokuVAAdditional{
 			Channel: bankConfig.ChannelID,
+			VirtualAccountConfig: &DokuVAConfig{
+				ReusableStatus: true,
+			},
 		},
 	}
 

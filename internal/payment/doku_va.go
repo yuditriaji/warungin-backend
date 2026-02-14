@@ -33,15 +33,15 @@ var VABanks = map[string]VABankConfig{
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "   84923", // Merchant BIN
-		CustomerPrefix:   "",        // Use empty prefix to avoid duplication with BIN
+		PartnerServiceID: "    8492", // 4 spaces + 4 digits (Matches Sample)
+		CustomerPrefix:   "3",
 		ChannelID:        "VIRTUAL_ACCOUNT_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "  139256", // Merchant BIN
-		CustomerPrefix:   "",        // Use empty prefix to avoid duplication with BIN
+		PartnerServiceID: "   13925", // 3 spaces + 5 digits (Matches Sample)
+		CustomerPrefix:   "6",
 		ChannelID:        "VIRTUAL_ACCOUNT_BRI",
 		DisplayName:      "Bank BRI",
 	},
@@ -64,7 +64,12 @@ type DokuVARequest struct {
 
 // DokuVAAdditional holds additional info for VA creation
 type DokuVAAdditional struct {
-	Channel string `json:"channel"`
+	Channel              string        `json:"channel"`
+	VirtualAccountConfig *DokuVAConfig `json:"virtualAccountConfig,omitempty"`
+}
+
+type DokuVAConfig struct {
+	ReusableStatus bool `json:"reusableStatus"`
 }
 
 // DokuVAResponse is the response from VA creation
