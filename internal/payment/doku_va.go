@@ -33,14 +33,14 @@ var VABanks = map[string]VABankConfig{
 	},
 	"bni": {
 		Code:             "BNI",
-		PartnerServiceID: "   84923", // Merchant BIN 84923 (padded to 8 chars)
+		PartnerServiceID: "    8492", // 4 spaces + 4 digits (Matches Sample)
 		CustomerPrefix:   "3",
 		ChannelID:        "VIRTUAL_ACCOUNT_BNI",
 		DisplayName:      "Bank BNI",
 	},
 	"bri": {
 		Code:             "BRI",
-		PartnerServiceID: "  139256", // Merchant BIN 139256 (padded to 8 chars)
+		PartnerServiceID: "   13925", // 3 spaces + 5 digits (Matches Sample)
 		CustomerPrefix:   "6",
 		ChannelID:        "VIRTUAL_ACCOUNT_BRI",
 		DisplayName:      "Bank BRI",
