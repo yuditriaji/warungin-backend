@@ -928,6 +928,20 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 	expiresAt := time.Now().Add(24 * time.Hour)
 	expiryISO := expiresAt.In(jakartaLoc).Format("2006-01-02T15:04:05+07:00")
 
+	// Configuration for VirtualAccountConfig based on bank samples
+	var vaConfig *DokuVAConfig
+	switch req.BankCode {
+	case "mandiri":
+		// Mandiri worked without this field previously. Keeping it nil to restore functionality.
+		vaConfig = nil // Or {ReusableStatus: true} based on sample, but nil is safer if it worked.
+	case "bni":
+		vaConfig = &DokuVAConfig{ReusableStatus: false} // Sample says false
+	case "bri":
+		vaConfig = &DokuVAConfig{ReusableStatus: true} // Sample says true
+	default:
+		vaConfig = &DokuVAConfig{ReusableStatus: true} // Default
+	}
+
 	// Build VA request
 	vaReq := DokuVARequest{
 		PartnerServiceID:      bankConfig.PartnerServiceID, // Keep as is for now, fix CustomerNo first
@@ -939,10 +953,8 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		VirtualAccountTrxType: "C",       // Closed payment (Moved to root)
 		ExpiredDate:           expiryISO, // Moved to root
 		AdditionalInfo: &DokuVAAdditional{
-			Channel: bankConfig.ChannelID,
-			VirtualAccountConfig: &DokuVAConfig{
-				ReusableStatus: true,
-			},
+			Channel:              bankConfig.ChannelID,
+			VirtualAccountConfig: vaConfig,
 		},
 	}
 
