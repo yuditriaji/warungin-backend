@@ -1115,8 +1115,24 @@ func (h *Handler) CheckVAStatus(c *gin.Context) {
 		return
 	}
 
-	// Check response code — "2002400" or "2002600" means success/paid
-	if statusResp.ResponseCode == "2002400" || statusResp.ResponseCode == "2002600" {
+	// Check status based on PaymentFlagReason
+	// Doku v1.0/transfer-va/status returns 200xxxx even for pending.
+	// We must verify the actual status message.
+	isPaid := false
+	if statusResp.VirtualAccountData != nil {
+		if reasonMap, ok := statusResp.VirtualAccountData.PaymentFlagReason.(map[string]interface{}); ok {
+			if val, ok := reasonMap["english"].(string); ok && val == "Success" {
+				isPaid = true
+			}
+		} else if reasonStr, ok := statusResp.VirtualAccountData.PaymentFlagReason.(string); ok {
+			if reasonStr == "Success" {
+				isPaid = true
+			}
+		}
+	}
+
+	// Double check response code is generally successful
+	if isPaid && (strings.HasPrefix(statusResp.ResponseCode, "200")) {
 		// Payment successful
 		invoice.Status = "paid"
 		invoice.PaidAt = timePtr(time.Now())
