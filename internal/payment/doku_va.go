@@ -186,7 +186,7 @@ func generateVA(config *DokuConfig, accessToken string, req DokuVARequest) (*Dok
 
 // queryVAStatus calls Doku SNAP API to check VA payment status
 func queryVAStatus(config *DokuConfig, accessToken string, req DokuVAStatusRequest) (*DokuVAStatusResponse, error) {
-	endpointPath := "/virtual-accounts/bi-snap-va/v1.1/transfer-va/status"
+	endpointPath := "/virtual-accounts/bi-snap-va/v1.1/transfer-va/inquiry"
 	url := config.BaseURL + endpointPath
 
 	reqJSON, err := json.Marshal(req)
