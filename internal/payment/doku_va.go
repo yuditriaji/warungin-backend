@@ -107,7 +107,7 @@ type DokuVAStatusResponse struct {
 
 // DokuVAStatusData holds VA status details
 type DokuVAStatusData struct {
-	PaymentFlagReason      string     `json:"paymentFlagReason"`
+	PaymentFlagReason      interface{} `json:"paymentFlagReason"`
 	PartnerServiceID       string     `json:"partnerServiceId"`
 	CustomerNo             string     `json:"customerNo"`
 	VirtualAccountNo       string     `json:"virtualAccountNo"`
