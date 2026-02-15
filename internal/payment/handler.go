@@ -1100,6 +1100,7 @@ func (h *Handler) CheckVAStatus(c *gin.Context) {
 		PartnerServiceID: bankConfig.PartnerServiceID,
 		CustomerNo:       customerNo,
 		VirtualAccountNo: invoice.VANumber,
+		TrxID:            reference,
 	}
 
 	statusResp, err := queryVAStatus(config, accessToken, statusReq)
@@ -1114,8 +1115,8 @@ func (h *Handler) CheckVAStatus(c *gin.Context) {
 		return
 	}
 
-	// Check response code — "2002400" means success/paid
-	if statusResp.ResponseCode == "2002400" {
+	// Check response code — "2002400" or "2002600" means success/paid
+	if statusResp.ResponseCode == "2002400" || statusResp.ResponseCode == "2002600" {
 		// Payment successful
 		invoice.Status = "paid"
 		invoice.PaidAt = timePtr(time.Now())
