@@ -96,6 +96,7 @@ type DokuVAStatusRequest struct {
 	CustomerNo       string `json:"customerNo"`
 	VirtualAccountNo string `json:"virtualAccountNo"`
 	InquiryRequestID string `json:"inquiryRequestId,omitempty"`
+	TrxID            string `json:"trxId,omitempty"`
 }
 
 // DokuVAStatusResponse is the response from VA status check
