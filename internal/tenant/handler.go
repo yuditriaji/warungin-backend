@@ -280,3 +280,25 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		"message": "Profile updated successfully",
 	})
 }
+
+// GetReferralStatus returns the tenant's current referral/affiliate status
+func (h *Handler) GetReferralStatus(c *gin.Context) {
+	tenantID := c.GetString("tenant_id")
+
+	var affTenant database.AffiliateTenant
+	if err := h.db.Preload("PortalUser").Where("tenant_id = ?", tenantID).First(&affTenant).Error; err != nil {
+		// Not affiliated
+		c.JSON(http.StatusOK, gin.H{
+			"has_referral":   false,
+			"referral_code":  "",
+			"affiliator_name": "",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"has_referral":   true,
+		"referral_code":  affTenant.PortalUser.ReferralCode,
+		"affiliator_name": affTenant.PortalUser.Name,
+	})
+}
