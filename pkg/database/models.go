@@ -357,9 +357,9 @@ type PortalInvite struct {
 // PromoCode represents a promotional discount code
 type PromoCode struct {
 	BaseModel
-	Code            string     `gorm:"size:6;uniqueIndex;not null" json:"code"`            // e.g., "LAUNCH"
-	ReferralCode    *string    `gorm:"size:6" json:"referral_code"`                        // e.g., "BUDI24" or null
-	FullCode        string     `gorm:"size:12;uniqueIndex;not null" json:"full_code"`       // "BUDI24LAUNCH" or "LAUNCH"
+	Code            string     `gorm:"size:10;uniqueIndex;not null" json:"code"`
+	ReferralCode    *string    `gorm:"size:20" json:"referral_code"`
+	FullCode        string     `gorm:"size:30;uniqueIndex;not null" json:"full_code"`
 	DiscountType    string     `gorm:"not null" json:"discount_type"`                      // "percentage" or "fixed"
 	DiscountValue   float64    `gorm:"not null" json:"discount_value"`                     // 20 (%) or 50000 (Rp)
 	ValidFrom       time.Time  `gorm:"not null" json:"valid_from"`

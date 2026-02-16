@@ -46,17 +46,17 @@ func (h *Handler) CreatePromoCode(c *gin.Context) {
 	}
 
 	// Get current user ID from context
-	userID, _ := c.Get("portal_user_id")
-	createdBy, err := uuid.Parse(userID.(string))
+	userIDStr := c.GetString("portal_user_id")
+	createdBy, err := uuid.Parse(userIDStr)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user"})
 		return
 	}
 
-	// Validate and normalize code (auto-uppercase, 6 alphanumeric chars)
+	// Validate and normalize code (auto-uppercase, 3-10 alphanumeric chars)
 	code := strings.ToUpper(strings.TrimSpace(req.Code))
-	if len(code) != 6 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode promo harus 6 karakter"})
+	if len(code) < 3 || len(code) > 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode promo harus 3-10 karakter"})
 		return
 	}
 	for _, ch := range code {
