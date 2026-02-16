@@ -339,7 +339,7 @@ func (h *Handler) CheckQRISStatus(c *gin.Context) {
 
 // --- Doku Webhook ---
 
-// DokuWebhookNotification represents the webhook payload from Doku
+// DokuWebhookNotification represents the QRIS webhook payload from Doku
 type DokuWebhookNotification struct {
 	OriginalPartnerReferenceNo string                 `json:"originalPartnerReferenceNo"`
 	OriginalReferenceNo        string                 `json:"originalReferenceNo"`
@@ -347,6 +347,19 @@ type DokuWebhookNotification struct {
 	TransactionStatusDesc      string                 `json:"transactionStatusDesc"`
 	Amount                     DokuAmount             `json:"amount"`
 	AdditionalInfo             map[string]interface{} `json:"additionalInfo"`
+}
+
+// DokuVAWebhookNotification represents the VA payment notification payload from Doku
+// VA notifications are only sent on successful payment — receiving one implies success.
+type DokuVAWebhookNotification struct {
+	PartnerServiceID string                 `json:"partnerServiceId"`
+	CustomerNo       string                 `json:"customerNo"`
+	VirtualAccountNo string                 `json:"virtualAccountNo"`
+	TrxID            string                 `json:"trxId"`
+	PaymentRequestID string                 `json:"paymentRequestId"`
+	PaidAmount       DokuAmount             `json:"paidAmount"`
+	TrxDateTime      string                 `json:"trxDateTime"`
+	AdditionalInfo   map[string]interface{} `json:"additionalInfo"`
 }
 
 // DokuWebhook handles Doku payment notifications (QRIS + VA)
@@ -400,20 +413,37 @@ func (h *Handler) DokuWebhook(c *gin.Context) {
 	)
 
 	if signature != expectedSignature {
-		fmt.Printf("Doku Webhook Error: Invalid signature.\nExpected: %s\nGot:      %s\n", expectedSignature, signature)
+		fmt.Printf("Doku Webhook Error: Invalid signature.\nExpected: %s\nGot:      %s\nEndpoint: %s\n", expectedSignature, signature, endpointPath)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid signature"})
 		return
 	}
 
-	// 4. Parse Body
-	var notification DokuWebhookNotification
-	if err := json.Unmarshal(bodyBytes, &notification); err != nil {
+	// 4. Detect payload type: VA or QRIS
+	// Parse into a generic map first to detect which type of notification this is
+	var rawPayload map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &rawPayload); err != nil {
 		fmt.Printf("Doku Webhook Error: JSON parse error: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
-	fmt.Printf("Doku Webhook Validated: ref=%s, status=%s, desc=%s\n",
+	// VA notifications contain "trxId" and "virtualAccountNo" fields
+	// QRIS notifications contain "originalPartnerReferenceNo" and "latestTransactionStatus"
+	if _, hasVATrxID := rawPayload["trxId"]; hasVATrxID {
+		// --- VA Payment Notification ---
+		h.handleVAWebhook(c, bodyBytes)
+		return
+	}
+
+	// --- QRIS Payment Notification (existing logic) ---
+	var notification DokuWebhookNotification
+	if err := json.Unmarshal(bodyBytes, &notification); err != nil {
+		fmt.Printf("Doku Webhook Error: QRIS JSON parse error: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		return
+	}
+
+	fmt.Printf("Doku Webhook QRIS: ref=%s, status=%s, desc=%s\n",
 		notification.OriginalPartnerReferenceNo,
 		notification.LatestTransactionStatus,
 		notification.TransactionStatusDesc,
@@ -425,7 +455,6 @@ func (h *Handler) DokuWebhook(c *gin.Context) {
 	var invoice database.Invoice
 	if err := h.db.Where("payment_ref = ?", referenceNo).First(&invoice).Error; err != nil {
 		fmt.Printf("Doku Webhook: Invoice not found for ref %s\n", referenceNo)
-		// Return 200 even if not found to stop Doku from retrying, as it's likely a bad reference or old test data
 		c.JSON(http.StatusOK, gin.H{"message": "OK"}) 
 		return
 	}
@@ -434,94 +463,10 @@ func (h *Handler) DokuWebhook(c *gin.Context) {
 	switch notification.LatestTransactionStatus {
 	case "00": // Success
 		if invoice.Status == "paid" {
-			// Already processed — idempotent
 			c.JSON(http.StatusOK, gin.H{"message": "OK"})
 			return
 		}
-
-		invoice.Status = "paid"
-		invoice.PaidAt = timePtr(time.Now())
-		h.db.Save(&invoice)
-
-		// Get subscription for tenant_id
-		var subscription database.Subscription
-		if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&subscription).Error; err != nil {
-			fmt.Printf("Doku Webhook: Subscription not found for invoice %s\n", invoice.ID)
-			c.JSON(http.StatusOK, gin.H{"message": "OK"})
-			return
-		}
-
-		// Parse plan and period from reference
-		plan, period := parsePlanFromReference(referenceNo)
-		if plan == "" {
-			fmt.Printf("Doku Webhook: Could not parse plan from reference %s\n", referenceNo)
-			c.JSON(http.StatusOK, gin.H{"message": "OK"})
-			return
-		}
-
-		// Upgrade subscription
-		periodMonths := GetPeriodMonths(BillingPeriod(period))
-		if err := h.upgradeSubscription(subscription.TenantID.String(), plan, periodMonths); err != nil {
-			fmt.Printf("Doku Webhook: Failed to upgrade subscription: %v\n", err)
-		} else {
-			fmt.Printf("Doku Webhook: Successfully upgraded tenant %s to %s (%s)\n",
-				subscription.TenantID, plan, period)
-
-			// Record affiliate commission
-			pricing := PlanPrices[plan]
-			basePrice := pricing.GetPrice(BillingPeriod(period))
-			h.recordAffiliateCommission(subscription.TenantID.String(), plan, basePrice, invoice.ID)
-
-			// Send payment success email
-			go func() {
-				// Get tenant and user info for email
-				var tenant database.Tenant
-				if err := h.db.Where("id = ?", subscription.TenantID).First(&tenant).Error; err != nil {
-					fmt.Printf("Doku Webhook: Failed to get tenant for email: %v\n", err)
-					return
-				}
-
-				var user database.User
-				if err := h.db.Where("tenant_id = ? AND role = ?", subscription.TenantID, "owner").First(&user).Error; err != nil {
-					fmt.Printf("Doku Webhook: Failed to get user for email: %v\n", err)
-					return
-				}
-
-				emailService := email.NewEmailService()
-				if !emailService.IsConfigured() {
-					fmt.Println("Doku Webhook: Email service not configured, skipping notification")
-					return
-				}
-
-				// Re-fetch subscription to get updated period end after upgrade
-				var updatedSub database.Subscription
-				if err := h.db.Where("id = ?", subscription.ID).First(&updatedSub).Error; err != nil {
-					fmt.Printf("Doku Webhook: Failed to re-fetch subscription for email: %v\n", err)
-					return
-				}
-
-				// Format expiry date
-				expiryDate := updatedSub.CurrentPeriodEnd.Format("02 January 2006")
-
-				err := emailService.SendPaymentSuccessEmail(
-					user.Email,
-					user.Name,
-					tenant.Name,
-					getPlanDisplayName(plan),
-					period,
-					invoice.InvoiceNumber,
-					invoice.Amount,
-					expiryDate,
-				)
-
-				if err != nil {
-					fmt.Printf("Doku Webhook: Failed to send payment success email: %v\n", err)
-				} else {
-					fmt.Printf("Doku Webhook: Payment success email sent to %s\n", user.Email)
-				}
-			}()
-		}
-
+		h.processSuccessfulPayment(&invoice, referenceNo)
 
 	case "05", "06": // Pending / In Progress
 		invoice.Status = "pending"
@@ -533,6 +478,130 @@ func (h *Handler) DokuWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "OK"})
+}
+
+// handleVAWebhook handles DOKU VA payment notifications
+// VA notifications are only sent on successful payment, so receiving one implies success.
+func (h *Handler) handleVAWebhook(c *gin.Context, bodyBytes []byte) {
+	var vaNotification DokuVAWebhookNotification
+	if err := json.Unmarshal(bodyBytes, &vaNotification); err != nil {
+		fmt.Printf("Doku VA Webhook Error: JSON parse error: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		return
+	}
+
+	fmt.Printf("Doku VA Webhook: trxId=%s, vaNo=%s, paidAmount=%s %s\n",
+		vaNotification.TrxID,
+		vaNotification.VirtualAccountNo,
+		vaNotification.PaidAmount.Value,
+		vaNotification.PaidAmount.Currency,
+	)
+
+	// Use trxId as the reference — this matches Invoice.PaymentRef
+	referenceNo := vaNotification.TrxID
+
+	// Find invoice by reference
+	var invoice database.Invoice
+	if err := h.db.Where("payment_ref = ?", referenceNo).First(&invoice).Error; err != nil {
+		fmt.Printf("Doku VA Webhook: Invoice not found for trxId %s\n", referenceNo)
+		c.JSON(http.StatusOK, gin.H{"message": "OK"})
+		return
+	}
+
+	if invoice.Status == "paid" {
+		// Already processed — idempotent
+		fmt.Printf("Doku VA Webhook: Invoice %s already paid, skipping\n", referenceNo)
+		c.JSON(http.StatusOK, gin.H{"message": "OK"})
+		return
+	}
+
+	// VA notification = payment success
+	h.processSuccessfulPayment(&invoice, referenceNo)
+
+	c.JSON(http.StatusOK, gin.H{"message": "OK"})
+}
+
+// processSuccessfulPayment marks an invoice as paid, upgrades the subscription,
+// records affiliate commission, and sends a payment success email.
+func (h *Handler) processSuccessfulPayment(invoice *database.Invoice, referenceNo string) {
+	invoice.Status = "paid"
+	invoice.PaidAt = timePtr(time.Now())
+	h.db.Save(invoice)
+
+	// Get subscription for tenant_id
+	var subscription database.Subscription
+	if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&subscription).Error; err != nil {
+		fmt.Printf("Doku Webhook: Subscription not found for invoice %s\n", invoice.ID)
+		return
+	}
+
+	// Parse plan and period from reference
+	plan, period := parsePlanFromReference(referenceNo)
+	if plan == "" {
+		fmt.Printf("Doku Webhook: Could not parse plan from reference %s\n", referenceNo)
+		return
+	}
+
+	// Upgrade subscription
+	periodMonths := GetPeriodMonths(BillingPeriod(period))
+	if err := h.upgradeSubscription(subscription.TenantID.String(), plan, periodMonths); err != nil {
+		fmt.Printf("Doku Webhook: Failed to upgrade subscription: %v\n", err)
+	} else {
+		fmt.Printf("Doku Webhook: Successfully upgraded tenant %s to %s (%s)\n",
+			subscription.TenantID, plan, period)
+
+		// Record affiliate commission
+		pricing := PlanPrices[plan]
+		basePrice := pricing.GetPrice(BillingPeriod(period))
+		h.recordAffiliateCommission(subscription.TenantID.String(), plan, basePrice, invoice.ID)
+
+		// Send payment success email (async)
+		go func() {
+			var tenant database.Tenant
+			if err := h.db.Where("id = ?", subscription.TenantID).First(&tenant).Error; err != nil {
+				fmt.Printf("Doku Webhook: Failed to get tenant for email: %v\n", err)
+				return
+			}
+
+			var user database.User
+			if err := h.db.Where("tenant_id = ? AND role = ?", subscription.TenantID, "owner").First(&user).Error; err != nil {
+				fmt.Printf("Doku Webhook: Failed to get user for email: %v\n", err)
+				return
+			}
+
+			emailService := email.NewEmailService()
+			if !emailService.IsConfigured() {
+				fmt.Println("Doku Webhook: Email service not configured, skipping notification")
+				return
+			}
+
+			// Re-fetch subscription to get updated period end after upgrade
+			var updatedSub database.Subscription
+			if err := h.db.Where("id = ?", subscription.ID).First(&updatedSub).Error; err != nil {
+				fmt.Printf("Doku Webhook: Failed to re-fetch subscription for email: %v\n", err)
+				return
+			}
+
+			expiryDate := updatedSub.CurrentPeriodEnd.Format("02 January 2006")
+
+			err := emailService.SendPaymentSuccessEmail(
+				user.Email,
+				user.Name,
+				tenant.Name,
+				getPlanDisplayName(plan),
+				period,
+				invoice.InvoiceNumber,
+				invoice.Amount,
+				expiryDate,
+			)
+
+			if err != nil {
+				fmt.Printf("Doku Webhook: Failed to send payment success email: %v\n", err)
+			} else {
+				fmt.Printf("Doku Webhook: Payment success email sent to %s\n", user.Email)
+			}
+		}()
+	}
 }
 
 // WebhookVerify handles GET requests for webhook URL verification
