@@ -151,6 +151,9 @@ func main() {
 			// Payment methods list
 			protected.GET("/payment/methods", paymentHandler.GetAvailablePaymentMethods)
 
+			// Promo code validation
+			protected.POST("/payment/validate-promo", paymentHandler.ValidatePromoCode)
+
 			// Cancel / Reactivate subscription
 			protected.POST("/subscription/cancel", subscriptionHandler.CancelSubscription)
 			protected.POST("/subscription/reactivate", subscriptionHandler.ReactivateSubscription)
@@ -258,6 +261,14 @@ func main() {
 				adminRoutes.POST("/payouts", portalHandler.RecordPayout)
 				adminRoutes.POST("/tenants/:id/record-commission", portalHandler.RecordManualCommission)
 				adminRoutes.POST("/sync-commissions", portalHandler.SyncMissingCommissions)
+
+				// Promo code management
+				adminRoutes.POST("/promo-codes", portalHandler.CreatePromoCode)
+				adminRoutes.GET("/promo-codes", portalHandler.ListPromoCodes)
+				adminRoutes.GET("/promo-codes/:id", portalHandler.GetPromoCode)
+				adminRoutes.PUT("/promo-codes/:id", portalHandler.UpdatePromoCode)
+				adminRoutes.DELETE("/promo-codes/:id", portalHandler.DeactivatePromoCode)
+				adminRoutes.GET("/promo-codes/:id/usages", portalHandler.GetPromoCodeUsages)
 			}
 		}
 	}

@@ -550,10 +550,13 @@ func (h *Handler) processSuccessfulPayment(invoice *database.Invoice, referenceN
 		fmt.Printf("Doku Webhook: Successfully upgraded tenant %s to %s (%s)\n",
 			subscription.TenantID, plan, period)
 
-		// Record affiliate commission
-		pricing := PlanPrices[plan]
-		basePrice := pricing.GetPrice(BillingPeriod(period))
-		h.recordAffiliateCommission(subscription.TenantID.String(), plan, basePrice, invoice.ID)
+		// Handle promo code usage and affiliate linking
+		if invoice.PromoCodeID != nil {
+			h.processPromoUsage(invoice, subscription.TenantID.String())
+		}
+
+		// Record affiliate commission (uses invoice.Amount which is already discounted)
+		h.recordAffiliateCommission(subscription.TenantID.String(), plan, invoice.Amount, invoice.ID)
 
 		// Send payment success email (async)
 		go func() {
@@ -601,6 +604,65 @@ func (h *Handler) processSuccessfulPayment(invoice *database.Invoice, referenceN
 				fmt.Printf("Doku Webhook: Payment success email sent to %s\n", user.Email)
 			}
 		}()
+	}
+}
+
+// processPromoUsage records promo usage, increments usage count, and creates affiliate link if needed
+func (h *Handler) processPromoUsage(invoice *database.Invoice, tenantID string) {
+	if invoice.PromoCodeID == nil {
+		return
+	}
+
+	// Create usage record
+	tenantUUID, _ := uuid.Parse(tenantID)
+	usage := database.PromoCodeUsage{
+		PromoCodeID:    *invoice.PromoCodeID,
+		TenantID:       tenantUUID,
+		InvoiceID:      invoice.ID,
+		DiscountAmount: invoice.DiscountAmount,
+	}
+	if err := h.db.Create(&usage).Error; err != nil {
+		fmt.Printf("Doku Webhook: Failed to record promo usage: %v\n", err)
+		return
+	}
+
+	// Increment promo current_uses
+	h.db.Model(&database.PromoCode{}).Where("id = ?", invoice.PromoCodeID).
+		UpdateColumn("current_uses", gorm.Expr("current_uses + 1"))
+
+	fmt.Printf("Doku Webhook: Recorded promo usage for tenant %s, promo %s\n", tenantID, invoice.PromoCodeID)
+
+	// If promo has referral code, create AffiliateTenant link
+	var promo database.PromoCode
+	if err := h.db.Where("id = ?", invoice.PromoCodeID).First(&promo).Error; err != nil {
+		return
+	}
+
+	if promo.ReferralCode != nil && *promo.ReferralCode != "" {
+		// Check if tenant already has an affiliate (skip if already linked)
+		var existingAffiliate database.AffiliateTenant
+		if err := h.db.Where("tenant_id = ?", tenantID).First(&existingAffiliate).Error; err == nil {
+			fmt.Printf("Doku Webhook: Tenant %s already has affiliate, skipping\n", tenantID)
+			return
+		}
+
+		// Find the affiliator by referral code
+		var affiliator database.PortalUser
+		if err := h.db.Where("referral_code = ? AND is_active = true AND role = 'affiliator'", *promo.ReferralCode).First(&affiliator).Error; err != nil {
+			fmt.Printf("Doku Webhook: Affiliator not found for referral code %s: %v\n", *promo.ReferralCode, err)
+			return
+		}
+
+		// Create AffiliateTenant link
+		affiliateTenant := database.AffiliateTenant{
+			PortalUserID: affiliator.ID,
+			TenantID:     tenantUUID,
+		}
+		if err := h.db.Create(&affiliateTenant).Error; err != nil {
+			fmt.Printf("Doku Webhook: Failed to create affiliate link: %v\n", err)
+		} else {
+			fmt.Printf("Doku Webhook: Auto-linked tenant %s to affiliator %s via promo code\n", tenantID, affiliator.Name)
+		}
 	}
 }
 
@@ -884,25 +946,150 @@ type DokuNotifyBody struct {
 
 // CreateVASubscriptionRequest is the request to generate a VA for subscription payment
 type CreateVASubscriptionRequest struct {
-	Plan          string `json:"plan" binding:"required"`
-	BillingPeriod string `json:"billing_period" binding:"required"`
-	Email         string `json:"email" binding:"required"`
-	BankCode      string `json:"bank_code" binding:"required"` // "mandiri", "bni", "bri"
+	Plan          string  `json:"plan" binding:"required"`
+	BillingPeriod string  `json:"billing_period" binding:"required"`
+	Email         string  `json:"email" binding:"required"`
+	BankCode      string  `json:"bank_code" binding:"required"` // "mandiri", "bni", "bri"
+	PromoCode     *string `json:"promo_code"`                    // Optional promo code
 }
 
 // VASubscriptionResponse is returned to the frontend with VA data
 type VASubscriptionResponse struct {
-	VANumber     string    `json:"va_number"`
-	BankName     string    `json:"bank_name"`
-	BankCode     string    `json:"bank_code"`
-	Amount       float64   `json:"amount"`
-	BaseAmount   float64   `json:"base_amount"`
-	AdminFee     float64   `json:"admin_fee"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	ReferenceNo  string    `json:"reference_no"`
-	Plan         string    `json:"plan"`
-	Period       string    `json:"billing_period"`
-	Instructions []string  `json:"instructions"`
+	VANumber       string    `json:"va_number"`
+	BankName       string    `json:"bank_name"`
+	BankCode       string    `json:"bank_code"`
+	Amount         float64   `json:"amount"`
+	BaseAmount     float64   `json:"base_amount"`
+	AdminFee       float64   `json:"admin_fee"`
+	DiscountAmount float64   `json:"discount_amount"`
+	OriginalAmount float64   `json:"original_amount"`
+	PromoCode      string    `json:"promo_code,omitempty"`
+	ExpiresAt      time.Time `json:"expires_at"`
+	ReferenceNo    string    `json:"reference_no"`
+	Plan           string    `json:"plan"`
+	Period         string    `json:"billing_period"`
+	Instructions   []string  `json:"instructions"`
+}
+
+// ValidatePromoRequest is the request to validate a promo code
+type ValidatePromoRequest struct {
+	PromoCode string `json:"promo_code" binding:"required"`
+	Plan      string `json:"plan" binding:"required"`
+	Period    string `json:"billing_period" binding:"required"`
+}
+
+// ValidatePromoCode validates a promo code and returns the discount preview
+func (h *Handler) ValidatePromoCode(c *gin.Context) {
+	var req ValidatePromoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tenantID := c.GetString("tenant_id")
+	promoCode := strings.ToUpper(strings.TrimSpace(req.PromoCode))
+
+	promo, errMsg := h.validatePromo(promoCode, tenantID, req.Plan)
+	if errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		return
+	}
+
+	// Calculate discount preview
+	pricing, ok := PlanPrices[req.Plan]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Paket tidak valid"})
+		return
+	}
+
+	period := BillingPeriod(req.Period)
+	basePrice := pricing.GetPrice(period)
+	if basePrice == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Paket ini gratis"})
+		return
+	}
+
+	discountAmount := calculateDiscount(promo, basePrice)
+	finalAmount := basePrice - discountAmount + AdminFee
+
+	c.JSON(http.StatusOK, gin.H{
+		"valid":           true,
+		"promo_code":      promo.FullCode,
+		"discount_type":   promo.DiscountType,
+		"discount_value":  promo.DiscountValue,
+		"base_price":      basePrice,
+		"discount_amount": discountAmount,
+		"admin_fee":       AdminFee,
+		"final_amount":    finalAmount,
+		"has_referral":    promo.ReferralCode != nil && *promo.ReferralCode != "",
+	})
+}
+
+// validatePromo validates a promo code against all business rules
+// Returns the promo and an error message (empty string if valid)
+func (h *Handler) validatePromo(code string, tenantID string, plan string) (*database.PromoCode, string) {
+	var promo database.PromoCode
+	if err := h.db.Where("full_code = ? AND is_active = true", code).First(&promo).Error; err != nil {
+		return nil, "Kode promo tidak valid atau tidak aktif"
+	}
+
+	now := time.Now()
+	if now.Before(promo.ValidFrom) || now.After(promo.ValidUntil) {
+		return nil, "Kode promo sudah tidak berlaku"
+	}
+
+	if promo.MaxUses != nil && promo.CurrentUses >= *promo.MaxUses {
+		return nil, "Kode promo sudah mencapai batas penggunaan"
+	}
+
+	// Check one-time per tenant
+	var usageCount int64
+	h.db.Model(&database.PromoCodeUsage{}).Where("promo_code_id = ? AND tenant_id = ?", promo.ID, tenantID).Count(&usageCount)
+	if usageCount > 0 {
+		return nil, "Anda sudah pernah menggunakan kode promo ini"
+	}
+
+	// Check applicable plans
+	if promo.ApplicablePlans != "" {
+		applicable := false
+		for _, p := range strings.Split(promo.ApplicablePlans, ",") {
+			if strings.TrimSpace(p) == plan {
+				applicable = true
+				break
+			}
+		}
+		if !applicable {
+			return nil, "Kode promo tidak berlaku untuk paket ini"
+		}
+	}
+
+	// Check affiliate conflict
+	if promo.ReferralCode != nil && *promo.ReferralCode != "" {
+		var existingAffiliate database.AffiliateTenant
+		if err := h.db.Where("tenant_id = ?", tenantID).First(&existingAffiliate).Error; err == nil {
+			// Tenant already has an affiliate — check if it's the same referral
+			var affiliator database.PortalUser
+			if err := h.db.Where("id = ?", existingAffiliate.PortalUserID).First(&affiliator).Error; err == nil {
+				if affiliator.ReferralCode != *promo.ReferralCode {
+					return nil, "Anda sudah terdaftar dengan kode referral lain"
+				}
+			}
+		}
+	}
+
+	return &promo, ""
+}
+
+// calculateDiscount calculates the discount amount based on promo type
+func calculateDiscount(promo *database.PromoCode, basePrice float64) float64 {
+	if promo.DiscountType == "percentage" {
+		return basePrice * promo.DiscountValue / 100
+	}
+	// Fixed discount — cap at base price
+	if promo.DiscountValue > basePrice {
+		return basePrice
+	}
+	return promo.DiscountValue
 }
 
 // CreateSubscriptionVA generates a Doku Virtual Account for subscription payment
@@ -946,7 +1133,28 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 
 	// Calculate admin fee (flat Rp 2,500)
 	adminFee := AdminFee
-	totalAmount := basePrice + adminFee
+	originalAmount := basePrice + adminFee
+
+	// Handle promo code
+	var promoCodeID *uuid.UUID
+	var discountAmount float64
+	var appliedPromo *database.PromoCode
+	var promoCodeStr string
+
+	if req.PromoCode != nil && *req.PromoCode != "" {
+		code := strings.ToUpper(strings.TrimSpace(*req.PromoCode))
+		promo, errMsg := h.validatePromo(code, tenantID, req.Plan)
+		if errMsg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+			return
+		}
+		appliedPromo = promo
+		discountAmount = calculateDiscount(promo, basePrice)
+		promoCodeID = &promo.ID
+		promoCodeStr = promo.FullCode
+	}
+
+	totalAmount := originalAmount - discountAmount
 
 	// Get Doku config
 	config, err := getDokuConfig()
@@ -1054,6 +1262,9 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		SubscriptionID: subscription.ID,
 		InvoiceNumber:  invoiceNumber,
 		Amount:         totalAmount,
+		OriginalAmount: originalAmount,
+		DiscountAmount: discountAmount,
+		PromoCodeID:    promoCodeID,
 		Status:         "pending",
 		DueDate:        expiresAt,
 		PaymentRef:     trxID,
@@ -1061,6 +1272,7 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 		PaymentMethod:  paymentMethod,
 		VANumber:       finalVANumber,
 	}
+	_ = appliedPromo // Used in response below
 	h.db.Create(&invoice)
 
 	// Generate payment instructions
@@ -1071,17 +1283,20 @@ func (h *Handler) CreateSubscriptionVA(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": VASubscriptionResponse{
-			VANumber:     finalVANumber,
-			BankName:     bankConfig.DisplayName,
-			BankCode:     req.BankCode,
-			Amount:       totalAmount,
-			BaseAmount:   basePrice,
-			AdminFee:     adminFee,
-			ExpiresAt:    expiresAt,
-			ReferenceNo:  trxID,
-			Plan:         req.Plan,
-			Period:       req.BillingPeriod,
-			Instructions: instructions,
+			VANumber:       finalVANumber,
+			BankName:       bankConfig.DisplayName,
+			BankCode:       req.BankCode,
+			Amount:         totalAmount,
+			BaseAmount:     basePrice,
+			AdminFee:       adminFee,
+			DiscountAmount: discountAmount,
+			OriginalAmount: originalAmount,
+			PromoCode:      promoCodeStr,
+			ExpiresAt:      expiresAt,
+			ReferenceNo:    trxID,
+			Plan:           req.Plan,
+			Period:         req.BillingPeriod,
+			Instructions:   instructions,
 		},
 	})
 }

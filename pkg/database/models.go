@@ -242,6 +242,9 @@ type Invoice struct {
 	SubscriptionID uuid.UUID  `gorm:"type:uuid;not null" json:"subscription_id"`
 	InvoiceNumber  string     `gorm:"uniqueIndex;not null" json:"invoice_number"`
 	Amount         float64    `gorm:"not null" json:"amount"`
+	OriginalAmount float64    `json:"original_amount"`           // Amount before discount
+	DiscountAmount float64    `gorm:"default:0" json:"discount_amount"` // Promo discount applied
+	PromoCodeID    *uuid.UUID `gorm:"type:uuid" json:"promo_code_id"`   // FK to promo_codes
 	Status         string     `gorm:"default:'pending'" json:"status"` // pending, paid, failed, expired
 	DueDate        time.Time  `json:"due_date"`
 	PaidAt         *time.Time `json:"paid_at"`
@@ -351,6 +354,34 @@ type PortalInvite struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// PromoCode represents a promotional discount code
+type PromoCode struct {
+	BaseModel
+	Code            string     `gorm:"size:6;uniqueIndex;not null" json:"code"`            // e.g., "LAUNCH"
+	ReferralCode    *string    `gorm:"size:6" json:"referral_code"`                        // e.g., "BUDI24" or null
+	FullCode        string     `gorm:"size:12;uniqueIndex;not null" json:"full_code"`       // "BUDI24LAUNCH" or "LAUNCH"
+	DiscountType    string     `gorm:"not null" json:"discount_type"`                      // "percentage" or "fixed"
+	DiscountValue   float64    `gorm:"not null" json:"discount_value"`                     // 20 (%) or 50000 (Rp)
+	ValidFrom       time.Time  `gorm:"not null" json:"valid_from"`
+	ValidUntil      time.Time  `gorm:"not null" json:"valid_until"`
+	MaxUses         *int       `json:"max_uses"`                                           // null = unlimited
+	CurrentUses     int        `gorm:"default:0" json:"current_uses"`
+	ApplicablePlans string     `gorm:"type:text" json:"applicable_plans"`                  // comma-separated: "pemula,bisnis" or "" for all
+	IsActive        bool       `gorm:"default:true" json:"is_active"`
+	CreatedBy       uuid.UUID  `gorm:"type:uuid;not null" json:"created_by"`
+}
+
+// PromoCodeUsage tracks promo code usage per tenant (one-time per tenant)
+type PromoCodeUsage struct {
+	BaseModel
+	PromoCodeID    uuid.UUID `gorm:"type:uuid;not null" json:"promo_code_id"`
+	PromoCode      PromoCode `gorm:"foreignKey:PromoCodeID" json:"promo_code,omitempty"`
+	TenantID       uuid.UUID `gorm:"type:uuid;not null" json:"tenant_id"`
+	Tenant         Tenant    `gorm:"foreignKey:TenantID" json:"tenant,omitempty"`
+	InvoiceID      uuid.UUID `gorm:"type:uuid;not null" json:"invoice_id"`
+	DiscountAmount float64   `json:"discount_amount"`
+}
+
 // Migrate runs database migrations
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -376,6 +407,8 @@ func Migrate(db *gorm.DB) error {
 		&AffiliateTenant{},
 		&AffiliateEarning{},
 		&PortalInvite{},
+		&PromoCode{},
+		&PromoCodeUsage{},
 	)
 }
 
