@@ -55,8 +55,8 @@ type Subscription struct {
 	Plan                   string     `gorm:"default:'gratis'" json:"plan"` // gratis, pemula, bisnis, enterprise
 	Status                 string     `gorm:"default:'active'" json:"status"` // active, past_due, cancelled
 	MaxUsers               int        `gorm:"default:1" json:"max_users"`
-	MaxProducts            int        `gorm:"default:20" json:"max_products"`
-	MaxTransactionsDaily   int        `gorm:"default:20" json:"max_transactions_daily"` // For gratis tier
+	MaxProducts            int        `gorm:"default:50" json:"max_products"`
+	MaxTransactionsDaily   int        `gorm:"default:30" json:"max_transactions_daily"` // For gratis tier
 	MaxTransactionsMonthly int        `gorm:"default:0" json:"max_transactions_monthly"` // 0 = unlimited
 	MaxOutlets             int        `gorm:"default:1" json:"max_outlets"`
 	DataRetentionDays      int        `gorm:"default:30" json:"data_retention_days"`
