@@ -52,6 +52,8 @@ type UpdateSettingsRequest struct {
 	ServiceChargeEnabled *bool    `json:"service_charge_enabled"`
 	ServiceChargeRate    *float64 `json:"service_charge_rate"`
 	ServiceChargeLabel   *string  `json:"service_charge_label"`
+	RawMaterialEnabled   *bool    `json:"raw_material_enabled"`
+	StockEnabled         *bool    `json:"stock_enabled"`
 }
 
 // UpdateSettings updates the tenant's settings
@@ -107,6 +109,14 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 	if req.ServiceChargeLabel != nil {
 		settings.ServiceChargeLabel = *req.ServiceChargeLabel
+	}
+
+	// Update feature flag fields if provided
+	if req.RawMaterialEnabled != nil {
+		settings.RawMaterialEnabled = *req.RawMaterialEnabled
+	}
+	if req.StockEnabled != nil {
+		settings.StockEnabled = *req.StockEnabled
 	}
 
 	// Save settings back to JSON
