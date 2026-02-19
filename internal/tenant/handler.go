@@ -33,8 +33,13 @@ func (h *Handler) GetSettings(c *gin.Context) {
 
 	// Parse settings JSON
 	var settings database.TenantSettings
-	if tenant.Settings != "" && tenant.Settings != "{}" {
+	hasExistingSettings := tenant.Settings != "" && tenant.Settings != "{}"
+	if hasExistingSettings {
 		json.Unmarshal([]byte(tenant.Settings), &settings)
+	} else {
+		// Default: features enabled for new/empty settings
+		settings.RawMaterialEnabled = true
+		settings.StockEnabled = true
 	}
 
 	c.JSON(http.StatusOK, gin.H{
