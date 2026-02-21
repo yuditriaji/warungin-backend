@@ -11,7 +11,8 @@ import (
 
 // Scheduler runs background jobs for subscription lifecycle management
 type Scheduler struct {
-	db *gorm.DB
+	db                    *gorm.DB
+	reconcileVAPayments   func() // Optional callback to reconcile pending VA payments
 }
 
 // NewScheduler creates a new subscription scheduler
@@ -19,9 +20,14 @@ func NewScheduler(db *gorm.DB) *Scheduler {
 	return &Scheduler{db: db}
 }
 
-// Start begins the scheduler loop (runs every hour)
+// SetVAReconciler sets the callback for VA payment reconciliation
+func (s *Scheduler) SetVAReconciler(fn func()) {
+	s.reconcileVAPayments = fn
+}
+
+// Start begins the scheduler loop (runs every 15 minutes)
 func (s *Scheduler) Start() {
-	ticker := time.NewTicker(1 * time.Hour)
+	ticker := time.NewTicker(15 * time.Minute)
 	go func() {
 		// Run immediately on startup
 		s.Run()
@@ -30,7 +36,7 @@ func (s *Scheduler) Start() {
 			s.Run()
 		}
 	}()
-	fmt.Println("Subscription scheduler started (runs every 1 hour)")
+	fmt.Println("Subscription scheduler started (runs every 15 minutes)")
 }
 
 // Run executes all scheduled jobs
@@ -38,6 +44,9 @@ func (s *Scheduler) Run() {
 	fmt.Println("Running subscription scheduler...")
 	s.SendExpiryReminders()
 	s.DowngradeExpiredSubscriptions()
+	if s.reconcileVAPayments != nil {
+		s.reconcileVAPayments()
+	}
 	fmt.Println("Subscription scheduler completed")
 }
 

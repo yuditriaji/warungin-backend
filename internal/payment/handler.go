@@ -1505,3 +1505,89 @@ func (h *Handler) GetAvailablePaymentMethods(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"data": methods})
 }
+
+// ReconcilePendingVAPayments checks all pending VA invoices against Doku and processes successful ones.
+// This is called by the scheduler to catch payments missed by webhooks and frontend polling.
+func (h *Handler) ReconcilePendingVAPayments() {
+	fmt.Println("Reconciling pending VA payments...")
+
+	var pendingInvoices []database.Invoice
+	if err := h.db.Where(
+		"status = ? AND payment_method LIKE ? AND due_date > ?",
+		"pending", "va_%", time.Now(),
+	).Find(&pendingInvoices).Error; err != nil {
+		fmt.Printf("VA Reconciliation: Failed to query pending invoices: %v\n", err)
+		return
+	}
+
+	if len(pendingInvoices) == 0 {
+		fmt.Println("VA Reconciliation: No pending VA invoices to reconcile")
+		return
+	}
+
+	fmt.Printf("VA Reconciliation: Found %d pending VA invoice(s) to check\n", len(pendingInvoices))
+
+	// Get Doku config and token once for all checks
+	config, err := getDokuConfig()
+	if err != nil {
+		fmt.Printf("VA Reconciliation: Doku config error: %v\n", err)
+		return
+	}
+
+	accessToken, err := getB2BAccessToken(config)
+	if err != nil {
+		fmt.Printf("VA Reconciliation: Doku token error: %v\n", err)
+		return
+	}
+
+	for _, invoice := range pendingInvoices {
+		// Extract bank code from payment method
+		bankCode := strings.TrimPrefix(invoice.PaymentMethod, "va_")
+		bankConfig, ok := VABanks[bankCode]
+		if !ok {
+			fmt.Printf("VA Reconciliation: Unknown bank code %s for invoice %s\n", bankCode, invoice.PaymentRef)
+			continue
+		}
+
+		// Parse customerNo from stored VA number
+		customerNo := ""
+		if len(invoice.VANumber) > len(bankConfig.PartnerServiceID) {
+			customerNo = invoice.VANumber[len(bankConfig.PartnerServiceID):]
+		}
+
+		statusReq := DokuVAStatusRequest{
+			PartnerServiceID: bankConfig.PartnerServiceID,
+			CustomerNo:       customerNo,
+			VirtualAccountNo: invoice.VANumber,
+			TrxID:            invoice.PaymentRef,
+		}
+
+		statusResp, err := queryVAStatus(config, accessToken, statusReq)
+		if err != nil {
+			fmt.Printf("VA Reconciliation: Status query error for %s: %v\n", invoice.PaymentRef, err)
+			continue
+		}
+
+		// Check if payment is successful
+		isPaid := false
+		if statusResp.VirtualAccountData != nil {
+			if reasonMap, ok := statusResp.VirtualAccountData.PaymentFlagReason.(map[string]interface{}); ok {
+				if val, ok := reasonMap["english"].(string); ok && val == "Success" {
+					isPaid = true
+				}
+			} else if reasonStr, ok := statusResp.VirtualAccountData.PaymentFlagReason.(string); ok {
+				if reasonStr == "Success" {
+					isPaid = true
+				}
+			}
+		}
+
+		if isPaid && strings.HasPrefix(statusResp.ResponseCode, "200") {
+			fmt.Printf("VA Reconciliation: Payment confirmed for %s — processing upgrade\n", invoice.PaymentRef)
+			inv := invoice // copy for pointer
+			h.processSuccessfulPayment(&inv, invoice.PaymentRef)
+		}
+	}
+
+	fmt.Println("VA Reconciliation: Completed")
+}

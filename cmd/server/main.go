@@ -276,6 +276,9 @@ func main() {
 
 	// Start subscription lifecycle scheduler
 	subScheduler := subscription.NewScheduler(db)
+	// Wire VA payment reconciliation (reuse the protected paymentHandler from routes)
+	reconcilePaymentHandler := payment.NewHandler(db)
+	subScheduler.SetVAReconciler(reconcilePaymentHandler.ReconcilePendingVAPayments)
 	subScheduler.Start()
 
 	// Start server
