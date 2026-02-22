@@ -295,9 +295,9 @@ func (h *Handler) CheckQRISStatus(c *gin.Context) {
 
 	// Check if paid (responseCode "00" = success)
 	if queryResp.LatestTransactionStatus == "00" {
-		// Payment confirmed! Use central processing function to handle
-		// promo usage, affiliate tracking, emails, and plan upgrades
-		h.processSuccessfulPayment(&invoice, reference)
+		if invoice.Status != "paid" {
+			h.processSuccessfulPayment(&invoice, reference)
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -1397,9 +1397,9 @@ func (h *Handler) CheckVAStatus(c *gin.Context) {
 
 	// Double check response code is generally successful
 	if isPaid && (strings.HasPrefix(statusResp.ResponseCode, "200")) {
-		// Payment successful! Use central processing function to handle
-		// promo usage, affiliate tracking, emails, and plan upgrades
-		h.processSuccessfulPayment(&invoice, reference)
+		if invoice.Status != "paid" {
+			h.processSuccessfulPayment(&invoice, reference)
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
