@@ -295,29 +295,9 @@ func (h *Handler) CheckQRISStatus(c *gin.Context) {
 
 	// Check if paid (responseCode "00" = success)
 	if queryResp.LatestTransactionStatus == "00" {
-		// Payment confirmed!
-		invoice.Status = "paid"
-		invoice.PaidAt = timePtr(time.Now())
-		h.db.Save(&invoice)
-
-		// Parse plan and period from reference
-		plan, period := parsePlanFromReference(reference)
-		if plan != "" {
-			// Get subscription to find tenant_id
-			var sub database.Subscription
-			if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&sub).Error; err == nil {
-				periodMonths := GetPeriodMonths(BillingPeriod(period))
-				if err := h.upgradeSubscription(sub.TenantID.String(), plan, periodMonths); err != nil {
-					fmt.Printf("Failed to upgrade subscription from status check: %v\n", err)
-				} else {
-					fmt.Printf("Subscription upgraded via status check for tenant %s\n", sub.TenantID)
-					// Record affiliate commission
-					pricing := PlanPrices[plan]
-					basePrice := pricing.GetPrice(BillingPeriod(period))
-					h.recordAffiliateCommission(sub.TenantID.String(), plan, basePrice, invoice.ID)
-				}
-			}
-		}
+		// Payment confirmed! Use central processing function to handle
+		// promo usage, affiliate tracking, emails, and plan upgrades
+		h.processSuccessfulPayment(&invoice, reference)
 
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -1417,50 +1397,9 @@ func (h *Handler) CheckVAStatus(c *gin.Context) {
 
 	// Double check response code is generally successful
 	if isPaid && (strings.HasPrefix(statusResp.ResponseCode, "200")) {
-		// Payment successful
-		invoice.Status = "paid"
-		invoice.PaidAt = timePtr(time.Now())
-		h.db.Save(&invoice)
-
-		// Parse plan and period from reference and upgrade
-		plan, period := parsePlanFromReference(reference)
-		if plan != "" {
-			var sub database.Subscription
-			if err := h.db.Where("id = ?", invoice.SubscriptionID).First(&sub).Error; err == nil {
-				periodMonths := GetPeriodMonths(BillingPeriod(period))
-				if err := h.upgradeSubscription(sub.TenantID.String(), plan, periodMonths); err != nil {
-					fmt.Printf("Failed to upgrade subscription from VA status check: %v\n", err)
-				} else {
-					fmt.Printf("Subscription upgraded via VA status check for tenant %s\n", sub.TenantID)
-					// Record affiliate commission
-					pricing := PlanPrices[plan]
-					basePrice := pricing.GetPrice(BillingPeriod(period))
-					h.recordAffiliateCommission(sub.TenantID.String(), plan, basePrice, invoice.ID)
-
-					// Send payment success email (async)
-					go func() {
-						var tenant database.Tenant
-						if err := h.db.Where("id = ?", sub.TenantID).First(&tenant).Error; err != nil {
-							return
-						}
-						var user database.User
-						if err := h.db.Where("tenant_id = ? AND role = ?", sub.TenantID, "owner").First(&user).Error; err != nil {
-							return
-						}
-						emailService := email.NewEmailService()
-						if !emailService.IsConfigured() {
-							return
-						}
-						expiryDate := sub.CurrentPeriodEnd.Format("02 January 2006")
-						emailService.SendPaymentSuccessEmail(
-							user.Email, user.Name, tenant.Name,
-							getPlanDisplayName(plan), period,
-							invoice.InvoiceNumber, invoice.Amount, expiryDate,
-						)
-					}()
-				}
-			}
-		}
+		// Payment successful! Use central processing function to handle
+		// promo usage, affiliate tracking, emails, and plan upgrades
+		h.processSuccessfulPayment(&invoice, reference)
 
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
