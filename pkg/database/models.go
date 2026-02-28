@@ -33,19 +33,20 @@ type BaseModel struct {
 // Tenant represents a business/organization
 type Tenant struct {
 	BaseModel
-	Name         string        `gorm:"not null" json:"name"`
-	BusinessType string        `json:"business_type"`
-	Phone        string        `json:"phone"`
-	Email        string        `gorm:"uniqueIndex" json:"email"`
-	Address      string        `json:"address"`         // Legacy/full address text
-	ProvinceID   string        `json:"province_id"`     // External API ID
-	ProvinceName string        `json:"province_name"`
-	CityID       string        `json:"city_id"`         // External API ID
-	CityName     string        `json:"city_name"`
-	PostalCode   string        `json:"postal_code"`
-	Settings     string        `gorm:"type:jsonb;default:'{}'" json:"settings"`
-	Subscription *Subscription `gorm:"foreignKey:TenantID" json:"subscription,omitempty"`
-	Outlets      []Outlet      `gorm:"foreignKey:TenantID" json:"outlets,omitempty"`
+	Name                    string        `gorm:"not null" json:"name"`
+	BusinessType            string        `json:"business_type"`
+	Phone                   string        `json:"phone"`
+	Email                   string        `gorm:"uniqueIndex" json:"email"`
+	Address                 string        `json:"address"`     // Legacy/full address text
+	ProvinceID              string        `json:"province_id"` // External API ID
+	ProvinceName            string        `json:"province_name"`
+	CityID                  string        `json:"city_id"` // External API ID
+	CityName                string        `json:"city_name"`
+	PostalCode              string        `json:"postal_code"`
+	Settings                string        `gorm:"type:jsonb;default:'{}'" json:"settings"`
+	UserAgreementAcceptedAt *time.Time    `json:"user_agreement_accepted_at"`
+	Subscription            *Subscription `gorm:"foreignKey:TenantID" json:"subscription,omitempty"`
+	Outlets                 []Outlet      `gorm:"foreignKey:TenantID" json:"outlets,omitempty"`
 }
 
 // Subscription represents tenant's plan

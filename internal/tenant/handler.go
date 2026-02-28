@@ -209,16 +209,17 @@ func (h *Handler) UploadQRIS(c *gin.Context) {
 
 // UpdateProfileRequest represents the profile update request body
 type UpdateProfileRequest struct {
-	Name         *string `json:"name"`
-	BusinessType *string `json:"business_type"`
-	Phone        *string `json:"phone"`
-	Address      *string `json:"address"`
-	ProvinceID   *string `json:"province_id"`
-	ProvinceName *string `json:"province_name"`
-	CityID       *string `json:"city_id"`
-	CityName     *string `json:"city_name"`
-	PostalCode   *string `json:"postal_code"`
-	ReferralCode *string `json:"referral_code"` // Optional affiliate referral code
+	Name                  *string `json:"name"`
+	BusinessType          *string `json:"business_type"`
+	Phone                 *string `json:"phone"`
+	Address               *string `json:"address"`
+	ProvinceID            *string `json:"province_id"`
+	ProvinceName          *string `json:"province_name"`
+	CityID                *string `json:"city_id"`
+	CityName              *string `json:"city_name"`
+	PostalCode            *string `json:"postal_code"`
+	ReferralCode          *string `json:"referral_code"` // Optional affiliate referral code
+	UserAgreementAccepted *bool   `json:"user_agreement_accepted"`
 }
 
 // UpdateProfile updates the tenant's profile (name, business_type, phone, address)
@@ -264,6 +265,10 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 	}
 	if req.PostalCode != nil {
 		tenant.PostalCode = *req.PostalCode
+	}
+	if req.UserAgreementAccepted != nil && *req.UserAgreementAccepted {
+		now := time.Now()
+		tenant.UserAgreementAcceptedAt = &now
 	}
 
 	if err := h.db.Save(&tenant).Error; err != nil {
