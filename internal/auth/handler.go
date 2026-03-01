@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -72,16 +73,27 @@ type GoogleUserInfo struct {
 	Picture       string `json:"picture"`
 }
 
+// redirectWithError redirects to frontend login page with an error message
+// instead of returning JSON on the backend domain (where users get stranded).
+func (h *Handler) redirectWithError(c *gin.Context, errorMsg string) {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+	redirectURL := fmt.Sprintf("%s/login?error=%s", frontendURL, url.QueryEscape(errorMsg))
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+}
+
 // GoogleLogin redirects to Google OAuth consent screen
 func (h *Handler) GoogleLogin(c *gin.Context) {
 	// Generate state token for CSRF protection
 	state := uuid.New().String()
 	
-	// Store state in cookie (short-lived)
-	c.SetCookie("oauth_state", state, 300, "/", "", false, true)
+	// Store state in cookie (short-lived, Secure=true for HTTPS)
+	c.SetCookie("oauth_state", state, 300, "/", "", true, true)
 	
-	url := h.googleConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
-	c.Redirect(http.StatusTemporaryRedirect, url)
+	authURL := h.googleConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	c.Redirect(http.StatusTemporaryRedirect, authURL)
 }
 
 // GoogleCallback handles the OAuth callback from Google
@@ -90,28 +102,28 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 	state := c.Query("state")
 	storedState, err := c.Cookie("oauth_state")
 	if err != nil || state != storedState {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid state parameter"})
+		h.redirectWithError(c, "Login gagal: sesi tidak valid. Silakan coba lagi.")
 		return
 	}
 
 	// Get authorization code
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No authorization code"})
+		h.redirectWithError(c, "Login gagal: tidak ada kode otorisasi dari Google.")
 		return
 	}
 
 	// Exchange code for token
 	token, err := h.googleConfig.Exchange(context.Background(), code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token"})
+		h.redirectWithError(c, "Login gagal: tidak dapat memproses token Google.")
 		return
 	}
 
 	// Get user info from Google
 	userInfo, err := h.getGoogleUserInfo(token.AccessToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
+		h.redirectWithError(c, "Login gagal: tidak dapat mengambil info dari Google.")
 		return
 	}
 
@@ -134,7 +146,7 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 				Email: userInfo.Email,
 			}
 			if err := h.db.Create(&tenant).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create business"})
+				h.redirectWithError(c, "Gagal membuat akun bisnis. Silakan coba lagi.")
 				return
 			}
 
@@ -173,11 +185,11 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 				OutletID: &defaultOutlet.ID,
 			}
 			if err := h.db.Create(&user).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+				h.redirectWithError(c, "Gagal membuat akun pengguna. Silakan coba lagi.")
 				return
 			}
 		} else if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			h.redirectWithError(c, "Terjadi kesalahan sistem. Silakan coba lagi.")
 			return
 		} else {
 			// User exists by email, update GoogleID
@@ -186,7 +198,7 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 			h.db.First(&tenant, user.TenantID)
 		}
 	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		h.redirectWithError(c, "Terjadi kesalahan sistem. Silakan coba lagi.")
 		return
 	} else {
 		// User found by GoogleID
